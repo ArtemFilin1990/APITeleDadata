@@ -57,7 +57,14 @@ class CheckINN(StatesGroup):
 def _build_result_totals(found: int, not_found: int, invalid: list[str]) -> str:
     lines = [f"Итог: найдено {found}, не найдено {not_found}."]
     if invalid:
-        lines.append(f"Невалидные значения: {', '.join(invalid)}")
+        digits_error = [value for value in invalid if not value.isdigit()]
+        length_error = [value for value in invalid if value.isdigit()]
+        invalid_chunks = []
+        if digits_error:
+            invalid_chunks.append(f"не только цифры: {', '.join(digits_error)}")
+        if length_error:
+            invalid_chunks.append(f"неверная длина: {', '.join(length_error)}")
+        lines.append("Невалидные значения: " + "; ".join(invalid_chunks))
     return "\n".join(lines)
 
 
@@ -417,7 +424,11 @@ async def handle_inn(message: Message, state: FSMContext):
     invalid_values = [value for value in values if not validate_company_id(value)[0]]
     valid_values = [value for value in values if value not in invalid_values]
     if not valid_values:
-        await message.answer(ERR_LEN_TEXT, reply_markup=reply_main_menu_kb())
+        has_non_digit = any(not value.isdigit() for value in invalid_values)
+        await message.answer(
+            ERR_DIGITS_TEXT if has_non_digit else ERR_LEN_TEXT,
+            reply_markup=reply_main_menu_kb(),
+        )
         return
 
     wait_msg = await message.answer("Ищу данные…", reply_markup=reply_main_menu_kb())
