@@ -88,7 +88,7 @@ async def on_back(callback: CallbackQuery, state: FSMContext):
 # ── Обработка ИНН: прямой режим ─────────────────────────────────────────────
 
 @router.message(CheckINN.waiting_inn_direct)
-async def handle_inn_direct(message: Message, state: FSMContext):
+async def handle_inn_direct(message: Message):
     tokens = parse_inns(message.text or "")
     if not tokens:
         await message.answer(
@@ -139,7 +139,7 @@ async def handle_inn_direct(message: Message, state: FSMContext):
 # ── Обработка ИНН: MCP-режим ────────────────────────────────────────────────
 
 @router.message(CheckINN.waiting_inn_mcp)
-async def handle_inn_mcp(message: Message, state: FSMContext):
+async def handle_inn_mcp(message: Message):
     tokens = parse_inns(message.text or "")
     if not tokens:
         await message.answer(
