@@ -106,6 +106,7 @@ class DadataDirectCachingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, 1)
 
     async def test_fetch_companies_uses_cache_for_same_key(self):
+        dadata_direct._PARTY_CACHE._data.clear()
         dadata_direct._BRANCHES_CACHE._data.clear()
         payload = {"suggestions": [{"value": "branch"}]}
         session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
