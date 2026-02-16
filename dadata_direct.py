@@ -4,6 +4,7 @@ import logging
 
 from config import DADATA_API_KEY, DADATA_FIND_URL
 from http_client import get_session
+from party_state import format_company_state
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +45,6 @@ def _v(val: str | None, default: str = "—") -> str:
     if val is None or str(val).strip() == "":
         return default
     return str(val).strip()
-
-
-def _status_label(state: dict | None) -> str:
-    if not state:
-        return "—"
-    code = state.get("status")
-    mapping = {
-        "ACTIVE": "✅ Действующая",
-        "LIQUIDATING": "⚠️ Ликвидируется",
-        "LIQUIDATED": "❌ Ликвидирована",
-        "BANKRUPT": "❌ Банкрот",
-        "REORGANIZING": "⚠️ Реорганизация",
-    }
-    return mapping.get(code, code or "—")
 
 
 def format_company_card(item: dict) -> str:
@@ -103,8 +90,9 @@ def format_company_card(item: dict) -> str:
     emails = ", ".join(e.get("value", "") for e in emails_raw if e.get("value")) or "—"
 
     # Статус
+    entity_type = d.get("type")
     state = d.get("state", {})
-    status = _status_label(state)
+    status = format_company_state(state, entity_type)
     reg_date = state.get("registration_date")
     if reg_date:
         from datetime import datetime
@@ -134,7 +122,6 @@ def format_company_card(item: dict) -> str:
         branches_str = "—"
 
     # Тип: юр. лицо / ИП
-    entity_type = d.get("type")
     type_label = "ИП" if entity_type == "INDIVIDUAL" else "Юридическое лицо"
 
     lines = [
