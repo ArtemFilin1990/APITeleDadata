@@ -70,6 +70,10 @@ class _FakeOpenAIClient:
 
 
 class DadataDirectErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        dadata_direct._PARTY_CACHE._data.clear()
+        dadata_direct._BRANCHES_CACHE._data.clear()
+
     async def test_fetch_company_returns_none_on_non_200(self):
         session = _FakeSession(response=_FakeResponse(status=403, text_data="forbidden"))
         with patch("dadata_direct.get_session", return_value=session):

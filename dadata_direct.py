@@ -1,26 +1,42 @@
 """Прямой запрос к DaData findById/party и форматирование ответа."""
 
-import logging
+from __future__ import annotations
 
+import html
+import logging
+from datetime import datetime
+
+from cache import TTLCache
 from config import DADATA_API_KEY, DADATA_FIND_URL
 from http_client import get_session
 from party_state import format_company_state
 
 logger = logging.getLogger(__name__)
 
+# Чтобы экономить лимиты DaData: кэш ответов на 30 минут.
+_PARTY_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=5000)
+_BRANCHES_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=2000)
 
-async def fetch_company(inn: str) -> dict | None:
-    """Запрашивает данные компании по ИНН через DaData API.
 
-    Returns:
-        dict с данными компании или None при ошибке / пустом ответе.
-    """
+def _cache_key(query: str, branch_type: str | None = None) -> str:
+    return f"{query}:{branch_type or 'ALL'}"
+
+
+async def fetch_companies(query: str, branch_type: str | None = None, count: int = 20) -> list[dict]:
+    """Запрашивает список компаний/филиалов по ИНН/ОГРН через DaData API."""
+    cache_key = _cache_key(query, branch_type)
+    cached = _BRANCHES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Authorization": f"Token {DADATA_API_KEY}",
     }
-    payload = {"query": inn}
+    payload: dict[str, str | int] = {"query": query, "count": max(1, min(count, 300))}
+    if branch_type:
+        payload["branch_type"] = branch_type
 
     try:
         session = get_session()
@@ -28,27 +44,108 @@ async def fetch_company(inn: str) -> dict | None:
             if resp.status != 200:
                 body = await resp.text()
                 logger.error("DaData HTTP %s: %s", resp.status, body[:500])
-                return None
+                return []
             data = await resp.json()
     except Exception as exc:
         logger.exception("Ошибка запроса к DaData: %s", exc)
-        return None
+        return []
 
-    suggestions = data.get("suggestions", [])
-    if not suggestions:
-        return None
-    return suggestions[0]
+    suggestions = data.get("suggestions", []) or []
+    _BRANCHES_CACHE.set(cache_key, suggestions)
+    return suggestions
+
+
+async def fetch_company(query: str) -> dict | None:
+    """Запрашивает одну компанию по ИНН/ОГРН через DaData API.
+
+    По умолчанию запрашивает только головную организацию (branch_type=MAIN),
+    чтобы пользователь сразу получал одну карточку.
+    """
+    cached = _PARTY_CACHE.get(query)
+    if cached is not None:
+        return cached
+
+    suggestions = await fetch_companies(query=query, branch_type="MAIN", count=1)
+    item = suggestions[0] if suggestions else None
+    _PARTY_CACHE.set(query, item)
+    return item
+
+
+async def fetch_branches(query: str, count: int = 20) -> list[dict]:
+    """Возвращает филиалы организации по ИНН/ОГРН."""
+    return await fetch_companies(query=query, branch_type="BRANCH", count=count)
 
 
 def _v(val: str | None, default: str = "—") -> str:
-    """Вернуть значение или прочерк."""
+    """Вернуть значение или прочерк (безопасно для HTML)."""
     if val is None or str(val).strip() == "":
         return default
-    return str(val).strip()
+    return html.escape(str(val).strip())
 
 
-def format_company_card(item: dict) -> str:
-    """Формирует HTML-карточку компании для Telegram."""
+def _format_date(timestamp_ms: int | None) -> str | None:
+    if not timestamp_ms:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp_ms / 1000).strftime("%d.%m.%Y")
+    except Exception:
+        return None
+
+
+def _format_money(value: int | float | None, year: int | None = None) -> str:
+    if value is None:
+        return "—"
+    if year:
+        return f"{value:,.0f} ₽ ({year})".replace(",", " ")
+    return f"{value:,.0f} ₽".replace(",", " ")
+
+
+def _entity_type_label(entity_type: str | None) -> str:
+    if entity_type == "INDIVIDUAL":
+        return "ИП"
+    return "Юридическое лицо"
+
+
+def format_company_short_card(item: dict) -> str:
+    """Короткая карточка для первого экрана менеджеру."""
+    d = item.get("data", {})
+    name_short = _v(d.get("name", {}).get("short_with_opf") or item.get("value"))
+    inn = _v(d.get("inn"))
+    ogrn = _v(d.get("ogrn"))
+    kpp = _v(d.get("kpp"))
+
+    state = d.get("state", {})
+    status = _v(state.get("status"))
+
+    address_obj = d.get("address", {})
+    address = _v(address_obj.get("value") or address_obj.get("unrestricted_value"))
+
+    mgmt = d.get("management", {})
+    manager_name = _v(mgmt.get("name"))
+    manager_post = _v(mgmt.get("post"))
+
+    okved = _v(d.get("okved"))
+    employee_count = _v(d.get("employee_count"))
+
+    finance = d.get("finance", {})
+    revenue = _format_money(finance.get("revenue"), finance.get("year"))
+
+    return "\n".join(
+        [
+            f"<b>📋 {name_short}</b>",
+            f"<b>ИНН:</b> <code>{inn}</code>  <b>ОГРН:</b> <code>{ogrn}</code>  <b>КПП:</b> <code>{kpp}</code>",
+            f"<b>Статус:</b> {status}",
+            f"<b>Адрес:</b> {address}",
+            f"<b>Руководитель:</b> {manager_name} ({manager_post})",
+            f"<b>ОКВЭД:</b> <code>{okved}</code>",
+            f"<b>Сотрудники:</b> {employee_count}",
+            f"<b>Выручка:</b> {revenue}",
+        ]
+    )
+
+
+def format_company_details(item: dict) -> str:
+    """Формирует расширенную HTML-карточку компании для Telegram."""
     d = item.get("data", {})
     name_full = _v(d.get("name", {}).get("full_with_opf"))
     name_short = _v(d.get("name", {}).get("short_with_opf"))
@@ -59,59 +156,35 @@ def format_company_card(item: dict) -> str:
     oktmo = _v(d.get("oktmo"))
     okato = _v(d.get("okato"))
 
-    # Адрес
     address_obj = d.get("address", {})
     address = _v(address_obj.get("unrestricted_value") or address_obj.get("value"))
 
-    # Руководитель
     mgmt = d.get("management", {})
     manager_name = _v(mgmt.get("name"))
     manager_post = _v(mgmt.get("post"))
 
-    # Уставный капитал
     capital = d.get("capital", {})
     cap_value = capital.get("value")
-    cap_type = capital.get("type")
-    if cap_value is not None:
-        capital_str = f"{cap_value:,.0f} ₽".replace(",", " ")
-        if cap_type:
-            capital_str += f" ({cap_type})"
-    else:
-        capital_str = "—"
+    cap_type = _v(capital.get("type"), default="")
+    capital_str = _format_money(cap_value)
+    if cap_value is not None and cap_type:
+        capital_str += f" ({cap_type})"
 
-    # ОКВЭД
     okved = _v(d.get("okved"))
     okved_type = _v(d.get("okved_type"))
 
-    # Контакты
     phones_raw = d.get("phones") or []
-    phones = ", ".join(p.get("value", "") for p in phones_raw if p.get("value")) or "—"
+    phones = _v(", ".join(p.get("value", "") for p in phones_raw if p.get("value")), default="—")
     emails_raw = d.get("emails") or []
-    emails = ", ".join(e.get("value", "") for e in emails_raw if e.get("value")) or "—"
+    emails = _v(", ".join(e.get("value", "") for e in emails_raw if e.get("value")), default="—")
 
-    # Статус
     entity_type = d.get("type")
     state = d.get("state", {})
-    status = format_company_state(state, entity_type)
-    reg_date = state.get("registration_date")
-    if reg_date:
-        from datetime import datetime
-        try:
-            reg_date = datetime.fromtimestamp(reg_date / 1000).strftime("%d.%m.%Y")
-        except Exception:
-            reg_date = "—"
-    else:
-        reg_date = "—"
+    status = _v(format_company_state(state, entity_type))
 
-    liq_date = state.get("liquidation_date")
-    if liq_date:
-        from datetime import datetime
-        try:
-            liq_date = datetime.fromtimestamp(liq_date / 1000).strftime("%d.%m.%Y")
-        except Exception:
-            liq_date = None
+    reg_date = _format_date(state.get("registration_date")) or "—"
+    liq_date = _format_date(state.get("liquidation_date"))
 
-    # Филиалы
     branch_type = d.get("branch_type")
     branch_count = d.get("branch_count")
     if branch_type == "MAIN" and branch_count:
@@ -121,8 +194,7 @@ def format_company_card(item: dict) -> str:
     else:
         branches_str = "—"
 
-    # Тип: юр. лицо / ИП
-    type_label = "ИП" if entity_type == "INDIVIDUAL" else "Юридическое лицо"
+    type_label = _entity_type_label(entity_type)
 
     lines = [
         f"<b>📋 {name_short}</b>",
@@ -163,7 +235,46 @@ def format_company_card(item: dict) -> str:
         f"<b>Email:</b> {emails}",
         "",
         "<b>━━━ Филиалы ━━━</b>",
-        f"{branches_str}",
+        f"{_v(branches_str)}",
     ]
+
+    return "\n".join(lines)
+
+
+def format_company_requisites(item: dict) -> str:
+    """Текст для копирования реквизитов в CRM."""
+    d = item.get("data", {})
+    name_full = _v(d.get("name", {}).get("full_with_opf"))
+    inn = _v(d.get("inn"))
+    kpp = _v(d.get("kpp"))
+    ogrn = _v(d.get("ogrn"))
+    address = _v((d.get("address") or {}).get("unrestricted_value"))
+
+    return "\n".join(
+        [
+            "Реквизиты контрагента:",
+            f"Наименование: {name_full}",
+            f"ИНН: {inn}",
+            f"КПП: {kpp}",
+            f"ОГРН: {ogrn}",
+            f"Юридический адрес: {address}",
+        ]
+    )
+
+
+def format_branches_list(items: list[dict]) -> str:
+    """Список филиалов в компактном виде."""
+    if not items:
+        return "Филиалы не найдены."
+
+    lines = ["<b>🏢 Филиалы</b>"]
+    for idx, item in enumerate(items, start=1):
+        d = item.get("data", {})
+        name = _v(d.get("name", {}).get("short_with_opf") or item.get("value"))
+        kpp = _v(d.get("kpp"))
+        address = _v((d.get("address") or {}).get("value"))
+        lines.append(f"{idx}. {name}")
+        lines.append(f"   КПП: <code>{kpp}</code>")
+        lines.append(f"   Адрес: {address}")
 
     return "\n".join(lines)
