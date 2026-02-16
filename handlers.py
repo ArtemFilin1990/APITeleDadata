@@ -15,9 +15,10 @@ from keyboards import (
     BTN_CHECK_INN,
     BTN_HELLO,
     BTN_START,
+    CB_ACT_CRM,
+    CB_ACT_EXPORT,
     CB_ACT_MENU,
     CB_ACT_NEW_INN,
-    CB_ACT_PDF,
     CB_NAV_BACK,
     CB_NAV_HOME,
     CB_PAGE_AUTHORITIES,
@@ -25,6 +26,7 @@ from keyboards import (
     CB_PAGE_CONTACTS,
     CB_PAGE_CONTRACTS,
     CB_PAGE_DEBTS,
+    CB_PAGE_DETAILS,
     CB_PAGE_EFRSB,
     CB_PAGE_FEDRESURS,
     CB_PAGE_FINANCE,
@@ -82,6 +84,48 @@ def _build_main_card(company: dict) -> str:
     d = _d(company)
     name = d.get("name", {}) or {}
     state = d.get("state", {}) or {}
+    management = d.get("management", {}) or {}
+    finance = d.get("finance", {}) or {}
+    address = d.get("address", {}) or {}
+
+    short_name = _v(name.get("short_with_opf") or company.get("value"))
+    reg_date = _date_from_ms(state.get("registration_date"))
+    inn = _v(d.get("inn"))
+    kpp = _v(d.get("kpp"))
+    ogrn = _v(d.get("ogrn"))
+    manager_post = _v(management.get("post"), default="руководитель")
+    manager_name = _v(management.get("name"))
+
+    employees = _v(d.get("employee_count"))
+    fin_year = finance.get("year")
+    avg_salary = _money(finance.get("salary"))
+    status = _v(state.get("status"))
+
+    addr = _v(address.get("value"))
+    okved = _v(d.get("okved"))
+
+    year_suffix = f" ({fin_year})" if fin_year else ""
+
+    return "\n".join(
+        [
+            "Карточка компании ✅",
+            f"🏢 {short_name}",
+            f"🆔 ИНН: {inn} • КПП: {kpp}",
+            f"🧾 ОГРН: {ogrn}",
+            f"📅 Регистрация: {reg_date}",
+            f"📍 Адрес: {addr}",
+            f"👤 {manager_post}: {manager_name}",
+            f"📌 Статус: {status}",
+            f"🏷️ ОКВЭД: {okved}",
+            f"👥 Штат: {employees}{year_suffix} • 💵 Ср. зарплата: {avg_salary}{year_suffix}",
+        ]
+    )
+
+
+def _build_details_card(company: dict) -> str:
+    d = _d(company)
+    name = d.get("name", {}) or {}
+    state = d.get("state", {}) or {}
     capital = d.get("capital", {}) or {}
     management = d.get("management", {}) or {}
     finance = d.get("finance", {}) or {}
@@ -136,7 +180,7 @@ def _build_main_card(company: dict) -> str:
 
     return "\n".join(
         [
-            "Готово ✅",
+            "Подробнее 📄",
             f"🏢 {short_name} (полное: {full_name})",
             f"📅 Регистрация: {reg_date}",
             f"🆔 ИНН/КПП: {inn} / {kpp}",
@@ -158,6 +202,42 @@ def _build_main_card(company: dict) -> str:
             f"Тел.: {_v(phones_line)}",
             f"Email: {_v(emails_line)}",
             f"Сайт: {_v(site_line)}",
+        ]
+    )
+
+
+def _build_export_text(company: dict) -> str:
+    d = _d(company)
+    name = d.get("name", {}) or {}
+    management = d.get("management", {}) or {}
+    address = d.get("address", {}) or {}
+    return "\n".join(
+        [
+            "Экспорт реквизитов 📤",
+            f"Наименование: {_v(name.get('full_with_opf') or company.get('value'))}",
+            f"ИНН: {_v(d.get('inn'))}",
+            f"КПП: {_v(d.get('kpp'))}",
+            f"ОГРН: {_v(d.get('ogrn'))}",
+            f"Адрес: {_v(address.get('unrestricted_value') or address.get('value'))}",
+            f"Руководитель: {_v(management.get('name'))}",
+        ]
+    )
+
+
+def _build_crm_text(company: dict) -> str:
+    d = _d(company)
+    name = d.get("name", {}) or {}
+    management = d.get("management", {}) or {}
+    address = d.get("address", {}) or {}
+    return "\n".join(
+        [
+            "CRM-блок 🧩",
+            f"company_name={_v(name.get('full_with_opf') or company.get('value'))}",
+            f"inn={_v(d.get('inn'))}",
+            f"kpp={_v(d.get('kpp'))}",
+            f"ogrn={_v(d.get('ogrn'))}",
+            f"manager={_v(management.get('name'))}",
+            f"address={_v(address.get('unrestricted_value') or address.get('value'))}",
         ]
     )
 
@@ -281,6 +361,9 @@ def _format_page(company: dict, page: str) -> str:
     if page == CB_PAGE_CONTACTS:
         return _full_contacts(company)
 
+    if page == CB_PAGE_DETAILS:
+        return _build_details_card(company)
+
     return _build_main_card(company)
 
 
@@ -394,9 +477,28 @@ async def on_menu(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == CB_ACT_PDF)
-async def on_pdf(callback: CallbackQuery):
-    await callback.answer("Экспорт в PDF пока недоступен", show_alert=True)
+@router.callback_query(F.data == CB_ACT_EXPORT)
+async def on_export(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    company = data.get("current_company")
+    if not company:
+        await callback.answer("Сначала введите ИНН", show_alert=True)
+        return
+
+    await callback.message.answer(_build_export_text(company), reply_markup=inline_actions_kb())
+    await callback.answer("Экспорт подготовлен")
+
+
+@router.callback_query(F.data == CB_ACT_CRM)
+async def on_crm(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    company = data.get("current_company")
+    if not company:
+        await callback.answer("Сначала введите ИНН", show_alert=True)
+        return
+
+    await callback.message.answer(_build_crm_text(company), reply_markup=inline_actions_kb())
+    await callback.answer("Блок для CRM готов")
 
 
 @router.callback_query(
@@ -414,6 +516,7 @@ async def on_pdf(callback: CallbackQuery):
             CB_PAGE_TAXES,
             CB_PAGE_FEDRESURS,
             CB_PAGE_EFRSB,
+            CB_PAGE_DETAILS,
         }
     )
 )

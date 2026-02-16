@@ -34,7 +34,9 @@ CB_PAGE_EFRSB = "page:efrsb"
 
 CB_ACT_NEW_INN = "act:new_inn"
 CB_ACT_MENU = "act:menu"
-CB_ACT_PDF = "act:pdf"
+CB_ACT_EXPORT = "act:export"
+CB_ACT_CRM = "act:crm"
+CB_PAGE_DETAILS = "page:details"
 
 
 def reply_main_menu_kb() -> ReplyKeyboardMarkup:
@@ -54,26 +56,13 @@ def inline_actions_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Правопреемник", callback_data=CB_PAGE_SUCCESSOR),
-                InlineKeyboardButton(text="Все контакты", callback_data=CB_PAGE_CONTACTS),
-                InlineKeyboardButton(text="ФНС/ПФР/ФСС/Росстат", callback_data=CB_PAGE_AUTHORITIES),
+                InlineKeyboardButton(text="📄 Подробнее", callback_data=CB_PAGE_DETAILS),
+                InlineKeyboardButton(text="📤 Экспорт", callback_data=CB_ACT_EXPORT),
+                InlineKeyboardButton(text="🧩 В CRM", callback_data=CB_ACT_CRM),
+            ],
+            [
                 InlineKeyboardButton(text="Новый ИНН", callback_data=CB_ACT_NEW_INN),
                 InlineKeyboardButton(text="Меню", callback_data=CB_ACT_MENU),
-            ],
-            [
-                InlineKeyboardButton(text="Финансы", callback_data=CB_PAGE_FINANCE),
-                InlineKeyboardButton(text="Суды", callback_data=CB_PAGE_CASES),
-                InlineKeyboardButton(text="Правоприемник", callback_data=CB_PAGE_SUCCESSOR),
-                InlineKeyboardButton(text="Учредители", callback_data=CB_PAGE_FOUNDERS),
-                InlineKeyboardButton(text="Госзакупки", callback_data=CB_PAGE_CONTRACTS),
-                InlineKeyboardButton(text="Налоги", callback_data=CB_PAGE_TAXES),
-                InlineKeyboardButton(text="Долги", callback_data=CB_PAGE_DEBTS),
-            ],
-            [
-                InlineKeyboardButton(text="Проверки", callback_data=CB_PAGE_INSPECTIONS),
-                InlineKeyboardButton(text="Федресурс", callback_data=CB_PAGE_FEDRESURS),
-                InlineKeyboardButton(text="ЕФРСБ", callback_data=CB_PAGE_EFRSB),
-                InlineKeyboardButton(text="сохранить в pdf", callback_data=CB_ACT_PDF),
             ],
             [
                 InlineKeyboardButton(text="назад", callback_data=CB_NAV_BACK),
