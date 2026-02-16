@@ -1,8 +1,9 @@
 """Прямой запрос к DaData findById/party и форматирование ответа."""
 
 import logging
-import aiohttp
+
 from config import DADATA_API_KEY, DADATA_FIND_URL
+from http_client import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +22,13 @@ async def fetch_company(inn: str) -> dict | None:
     payload = {"query": inn}
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                DADATA_FIND_URL, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
-            ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    logger.error("DaData HTTP %s: %s", resp.status, body[:500])
-                    return None
-                data = await resp.json()
+        session = get_session()
+        async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
+            if resp.status != 200:
+                body = await resp.text()
+                logger.error("DaData HTTP %s: %s", resp.status, body[:500])
+                return None
+            data = await resp.json()
     except Exception as exc:
         logger.exception("Ошибка запроса к DaData: %s", exc)
         return None
