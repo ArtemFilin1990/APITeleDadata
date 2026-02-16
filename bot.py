@@ -6,9 +6,16 @@ import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import TELEGRAM_BOT_TOKEN, LOG_LEVEL
+from config import (
+    BOT_STARTUP_MAX_RETRIES,
+    BOT_STARTUP_RETRY_BASE_DELAY_SECONDS,
+    BOT_STARTUP_RETRY_MAX_DELAY_SECONDS,
+    LOG_LEVEL,
+    TELEGRAM_BOT_TOKEN,
+)
 from handlers import router
 from http_client import close_session
 
@@ -29,21 +36,49 @@ async def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
 
-    bot = Bot(
-        token=TELEGRAM_BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML"),
-    )
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(router)
+    retries_left = BOT_STARTUP_MAX_RETRIES
+    attempt = 1
 
     logger.info("Бот запускается…")
-    try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    finally:
-        await close_session()
-        await bot.session.close()
-        logger.info("Бот остановлен.")
+    while True:
+        bot = Bot(
+            token=TELEGRAM_BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode="HTML"),
+        )
+        dp = Dispatcher(storage=MemoryStorage())
+        dp.include_router(router)
+
+        try:
+            await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+            return
+        except TelegramNetworkError as exc:
+            if retries_left <= 0:
+                logger.error("Не удалось подключиться к Telegram API: %s", exc)
+                raise
+
+            delay = _backoff_delay_seconds(attempt)
+            logger.warning(
+                "Временная ошибка сети Telegram (%s). Повтор через %.1f сек. Осталось попыток: %s",
+                exc,
+                delay,
+                retries_left,
+            )
+            retries_left -= 1
+            attempt += 1
+            await asyncio.sleep(delay)
+        finally:
+            await bot.session.close()
+
+
+def _backoff_delay_seconds(attempt: int) -> float:
+    if attempt < 1:
+        attempt = 1
+    delay = BOT_STARTUP_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+    return min(delay, BOT_STARTUP_RETRY_MAX_DELAY_SECONDS)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        asyncio.run(close_session())
