@@ -63,7 +63,7 @@ def inline_actions_kb() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="Финансы", callback_data=CB_PAGE_FINANCE),
                 InlineKeyboardButton(text="Суды", callback_data=CB_PAGE_CASES),
-                InlineKeyboardButton(text="Правоприемник", callback_data=CB_PAGE_SUCCESSOR),
+                InlineKeyboardButton(text="Правопреемник", callback_data=CB_PAGE_SUCCESSOR),
                 InlineKeyboardButton(text="Учредители", callback_data=CB_PAGE_FOUNDERS),
                 InlineKeyboardButton(text="Госзакупки", callback_data=CB_PAGE_CONTRACTS),
                 InlineKeyboardButton(text="Налоги", callback_data=CB_PAGE_TAXES),

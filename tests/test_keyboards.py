@@ -20,6 +20,11 @@ class ReplyKeyboardTests(unittest.TestCase):
 
 
 class InlineKeyboardTests(unittest.TestCase):
+
+    def test_successor_button_spelling(self):
+        kb = inline_actions_kb()
+        self.assertEqual(kb.inline_keyboard[1][2].text, "Правопреемник")
+
     def test_last_row_is_fixed_nav(self):
         kb = inline_actions_kb()
         last_row = kb.inline_keyboard[-1]
