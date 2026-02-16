@@ -97,6 +97,13 @@ nano .env
 python bot.py
 ```
 
+### Быстрый запуск через Makefile
+
+```bash
+make install
+make run-prod
+```
+
 ### Docker (опционально)
 
 ```dockerfile
