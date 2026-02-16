@@ -1,38 +1,18 @@
-"""Прямой запрос к DaData findById/party и форматирование карточки для Telegram (HTML)."""
+"""Прямой запрос к DaData findById/party и форматирование ответа."""
 
-from __future__ import annotations
-
-import html
 import logging
-import asyncio
-from datetime import datetime
-from typing import Any, Dict, Optional
-
 import aiohttp
-
-from cache import TTLCache
-from http_client import get_session
 from config import DADATA_API_KEY, DADATA_FIND_URL
 
 logger = logging.getLogger(__name__)
 
-# Кэшируем ответы DaData: экономим время и лимиты.
-_DADATA_CACHE = TTLCache(ttl_seconds=6*60*60, max_items=5000)
-# Ограничиваем параллельные запросы к DaData.
-_DADATA_SEM = asyncio.Semaphore(5)
 
-
-async def fetch_company(inn: str) -> Optional[Dict[str, Any]]:
+async def fetch_company(inn: str) -> dict | None:
     """Запрашивает данные компании по ИНН через DaData API.
 
     Returns:
         dict с данными компании или None при ошибке / пустом ответе.
     """
-    # Сначала пробуем кэш
-    cached = _DADATA_CACHE.get(inn)
-    if cached is not None:
-        return cached
-
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -41,12 +21,9 @@ async def fetch_company(inn: str) -> Optional[Dict[str, Any]]:
     payload = {"query": inn}
 
     try:
-        async with _DADATA_SEM:
-            session = get_session()
+        async with aiohttp.ClientSession() as session:
             async with session.post(
-                DADATA_FIND_URL,
-                json=payload,
-                headers=headers,
+                DADATA_FIND_URL, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
                 if resp.status != 200:
                     body = await resp.text()
@@ -57,31 +34,20 @@ async def fetch_company(inn: str) -> Optional[Dict[str, Any]]:
         logger.exception("Ошибка запроса к DaData: %s", exc)
         return None
 
-        logger.exception("Ошибка запроса к DaData: %s", exc)
-        return None
-
     suggestions = data.get("suggestions", [])
     if not suggestions:
         return None
-    result = suggestions[0]
-    _DADATA_CACHE.set(inn, result)
-    return result
+    return suggestions[0]
 
 
-def _v(val: Any, default: str = "—") -> str:
-    """Вернуть строковое значение или прочерк."""
-    if val is None:
+def _v(val: str | None, default: str = "—") -> str:
+    """Вернуть значение или прочерк."""
+    if val is None or str(val).strip() == "":
         return default
-    s = str(val).strip()
-    return s if s else default
+    return str(val).strip()
 
 
-def _h(val: Any, default: str = "—") -> str:
-    """Экранировать значение для HTML-разметки Telegram."""
-    return html.escape(_v(val, default), quote=False)
-
-
-def _status_label(state: Optional[Dict[str, Any]]) -> str:
+def _status_label(state: dict | None) -> str:
     if not state:
         return "—"
     code = state.get("status")
@@ -95,75 +61,76 @@ def _status_label(state: Optional[Dict[str, Any]]) -> str:
     return mapping.get(code, code or "—")
 
 
-def _ts_to_date(ts_ms: Any) -> str:
-    if not ts_ms:
-        return "—"
-    try:
-        return datetime.fromtimestamp(float(ts_ms) / 1000).strftime("%d.%m.%Y")
-    except Exception:
-        return "—"
-
-
-def format_company_card(item: Dict[str, Any]) -> str:
+def format_company_card(item: dict) -> str:
     """Формирует HTML-карточку компании для Telegram."""
-    d = item.get("data", {}) or {}
-
-    name_full = _h((d.get("name", {}) or {}).get("full_with_opf"))
-    name_short = _h((d.get("name", {}) or {}).get("short_with_opf"))
-    inn = _h(d.get("inn"))
-    kpp = _h(d.get("kpp"))
-    ogrn = _h(d.get("ogrn"))
-    okpo = _h(d.get("okpo"))
-    oktmo = _h(d.get("oktmo"))
-    okato = _h(d.get("okato"))
+    d = item.get("data", {})
+    name_full = _v(d.get("name", {}).get("full_with_opf"))
+    name_short = _v(d.get("name", {}).get("short_with_opf"))
+    inn = _v(d.get("inn"))
+    kpp = _v(d.get("kpp"))
+    ogrn = _v(d.get("ogrn"))
+    okpo = _v(d.get("okpo"))
+    oktmo = _v(d.get("oktmo"))
+    okato = _v(d.get("okato"))
 
     # Адрес
-    address_obj = d.get("address", {}) or {}
-    address = _h(address_obj.get("unrestricted_value") or address_obj.get("value"))
+    address_obj = d.get("address", {})
+    address = _v(address_obj.get("unrestricted_value") or address_obj.get("value"))
 
     # Руководитель
-    mgmt = d.get("management", {}) or {}
-    manager_name = _h(mgmt.get("name"))
-    manager_post = _h(mgmt.get("post"))
+    mgmt = d.get("management", {})
+    manager_name = _v(mgmt.get("name"))
+    manager_post = _v(mgmt.get("post"))
 
     # Уставный капитал
-    capital = d.get("capital", {}) or {}
+    capital = d.get("capital", {})
     cap_value = capital.get("value")
     cap_type = capital.get("type")
     if cap_value is not None:
-        try:
-            capital_str = f"{float(cap_value):,.0f} ₽".replace(",", " ")
-        except Exception:
-            capital_str = _h(cap_value)
+        capital_str = f"{cap_value:,.0f} ₽".replace(",", " ")
         if cap_type:
-            capital_str += f" ({_h(cap_type)})"
+            capital_str += f" ({cap_type})"
     else:
         capital_str = "—"
 
     # ОКВЭД
-    okved = _h(d.get("okved"))
-    okved_type = _h(d.get("okved_type"))
+    okved = _v(d.get("okved"))
+    okved_type = _v(d.get("okved_type"))
 
     # Контакты
     phones_raw = d.get("phones") or []
-    phones = ", ".join(_h(p.get("value", ""), default="") for p in phones_raw if p.get("value")) or "—"
+    phones = ", ".join(p.get("value", "") for p in phones_raw if p.get("value")) or "—"
     emails_raw = d.get("emails") or []
-    emails = ", ".join(_h(e.get("value", ""), default="") for e in emails_raw if e.get("value")) or "—"
+    emails = ", ".join(e.get("value", "") for e in emails_raw if e.get("value")) or "—"
 
     # Статус
-    state = d.get("state", {}) or {}
+    state = d.get("state", {})
     status = _status_label(state)
-    reg_date = _ts_to_date(state.get("registration_date"))
-    liq_date = _ts_to_date(state.get("liquidation_date"))
-    liq_date = None if liq_date == "—" else liq_date
+    reg_date = state.get("registration_date")
+    if reg_date:
+        from datetime import datetime
+        try:
+            reg_date = datetime.fromtimestamp(reg_date / 1000).strftime("%d.%m.%Y")
+        except Exception:
+            reg_date = "—"
+    else:
+        reg_date = "—"
+
+    liq_date = state.get("liquidation_date")
+    if liq_date:
+        from datetime import datetime
+        try:
+            liq_date = datetime.fromtimestamp(liq_date / 1000).strftime("%d.%m.%Y")
+        except Exception:
+            liq_date = None
 
     # Филиалы
     branch_type = d.get("branch_type")
     branch_count = d.get("branch_count")
     if branch_type == "MAIN" and branch_count:
-        branches_str = _h(f"Головная организация, филиалов: {branch_count}")
+        branches_str = f"Головная организация, филиалов: {branch_count}"
     elif branch_type == "BRANCH":
-        branches_str = _h("Филиал")
+        branches_str = "Филиал"
     else:
         branches_str = "—"
 
@@ -175,12 +142,12 @@ def format_company_card(item: Dict[str, Any]) -> str:
         f"<b>📋 {name_short}</b>",
         "",
         f"<b>Полное наименование:</b> {name_full}",
-        f"<b>Тип:</b> {html.escape(type_label, quote=False)}",
-        f"<b>Статус:</b> {html.escape(status, quote=False)}",
-        f"<b>Дата регистрации:</b> {html.escape(reg_date, quote=False)}",
+        f"<b>Тип:</b> {type_label}",
+        f"<b>Статус:</b> {status}",
+        f"<b>Дата регистрации:</b> {reg_date}",
     ]
     if liq_date:
-        lines.append(f"<b>Дата ликвидации:</b> {html.escape(liq_date, quote=False)}")
+        lines.append(f"<b>Дата ликвидации:</b> {liq_date}")
 
     lines += [
         "",

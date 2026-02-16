@@ -10,7 +10,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN, LOG_LEVEL
 from handlers import router
-from http_client import init_session, close_session
 
 
 def setup_logging() -> None:
@@ -25,16 +24,6 @@ def setup_logging() -> None:
     logging.getLogger("aiogram").setLevel(logging.WARNING)
 
 
-
-async def on_startup() -> None:
-    # Инициализируем общий HTTP-клиент
-    init_session()
-
-
-async def on_shutdown() -> None:
-    # Закрываем общий HTTP-клиент
-    await close_session()
-
 async def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -44,8 +33,6 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode="HTML"),
     )
     dp = Dispatcher(storage=MemoryStorage())
-    dp.startup.register(lambda *_: on_startup())
-    dp.shutdown.register(lambda *_: on_shutdown())
     dp.include_router(router)
 
     logger.info("Бот запускается…")

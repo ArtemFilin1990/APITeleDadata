@@ -7,8 +7,6 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import OPENAI_API_KEY, DADATA_SECRET_KEY
-
 from keyboards import (
     main_menu_kb,
     back_menu_kb,
@@ -65,22 +63,6 @@ async def on_mode_direct(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == CB_MODE_MCP)
 async def on_mode_mcp(callback: CallbackQuery, state: FSMContext):
-    # MCP-режим требует ключи DaData Secret + OpenAI
-    if not DADATA_SECRET_KEY or not OPENAI_API_KEY:
-        missing = []
-        if not DADATA_SECRET_KEY:
-            missing.append('DADATA_SECRET_KEY')
-        if not OPENAI_API_KEY:
-            missing.append('OPENAI_API_KEY')
-        await callback.message.edit_text(
-            "⚠️ <b>MCP-режим не настроен</b>\n\n"
-            f"Не заданы: <code>{', '.join(missing)}</code>\n\n"
-            "Добавьте ключи в <code>.env</code> и перезапустите бота.",
-            parse_mode="HTML",
-            reply_markup=back_menu_kb(),
-        )
-        await callback.answer()
-        return
     await state.set_state(CheckINN.waiting_inn_mcp)
     await callback.message.edit_text(
         "🤖 <b>Режим: DaData через AI (MCP)</b>\n\n"
