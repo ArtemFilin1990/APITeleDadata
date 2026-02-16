@@ -1,6 +1,10 @@
 # Telegram-бот: Проверка компаний по ИНН/ОГРН
 
-Бот для Telegram на Python (aiogram 3.x) с двумя режимами проверки контрагентов по ИНН/ОГРН через сервис DaData.
+Бот для Telegram на Python с двумя режимами проверки контрагентов по ИНН/ОГРН через сервис DaData.
+
+Поддерживаются два рантайма Telegram:
+- `aiogram 3.x` (основной, `bot.py`)
+- `pyTelegramBotAPI` / TeleBot (альтернативный, `bot_telebot.py`)
 
 ## Возможности
 
@@ -60,6 +64,8 @@ inn_checker_bot/
 
 ### Переменные окружения
 
+> Важно: храните секреты только в локальном `.env` и не коммитьте его в репозиторий.
+
 ```env
 # Поддерживаются оба нейминга:
 TELEGRAM_BOT_TOKEN=...   # или BOT_TOKEN
@@ -102,6 +108,12 @@ python bot.py
 ```bash
 make install
 make run-prod
+```
+
+Альтернативный запуск через TeleBot:
+
+```bash
+make run-telebot
 ```
 
 ### Docker (опционально)
@@ -159,7 +171,7 @@ docker run -d --env-file .env --name inn-bot inn-checker-bot
 
 | Компонент | Технология |
 |-----------|-----------|
-| Фреймворк бота | aiogram 3.x |
+| Фреймворк бота | aiogram 3.x / pyTelegramBotAPI |
 | HTTP-клиент | aiohttp |
 | Справочник статусов | party-state.csv (hflabs/party-state) |
 | OpenAI SDK | openai (Responses API) |

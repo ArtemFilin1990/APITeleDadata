@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from datetime import datetime
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Чтобы экономить лимиты DaData: кэш ответов на 30 минут.
 _PARTY_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=5000)
 _BRANCHES_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=2000)
+_DADATA_SEM = asyncio.Semaphore(5)
 
 
 def _cache_key(query: str, branch_type: str | None = None) -> str:
@@ -39,13 +41,14 @@ async def fetch_companies(query: str, branch_type: str | None = None, count: int
         payload["branch_type"] = branch_type
 
     try:
-        session = get_session()
-        async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                logger.error("DaData HTTP %s: %s", resp.status, body[:500])
-                return []
-            data = await resp.json()
+        async with _DADATA_SEM:
+            session = get_session()
+            async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.error("DaData HTTP %s: %s", resp.status, body[:500])
+                    return []
+                data = await resp.json()
     except Exception as exc:
         logger.exception("Ошибка запроса к DaData: %s", exc)
         return []
