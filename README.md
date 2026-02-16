@@ -76,6 +76,11 @@ OPENAI_API_KEY=...       # требуется только для MCP
 MODE=polling
 WEBHOOK_URL=https://<domain>/tg/webhook
 PORT=8080
+
+# Опционально: повторы при временных сетевых ошибках Telegram API
+BOT_STARTUP_MAX_RETRIES=5
+BOT_STARTUP_RETRY_BASE_DELAY_SECONDS=2
+BOT_STARTUP_RETRY_MAX_DELAY_SECONDS=30
 ```
 
 

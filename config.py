@@ -45,3 +45,43 @@ MCP_SERVER_URL = "https://mcp.dadata.ru/mcp"
 
 # Логирование
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+
+def _get_int_env(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logging.warning("Некорректное значение %s=%r, используем %s", name, raw, default)
+        return default
+    if value < minimum:
+        logging.warning("Значение %s=%s меньше %s, используем %s", name, value, minimum, default)
+        return default
+    return value
+
+
+def _get_float_env(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logging.warning("Некорректное значение %s=%r, используем %s", name, raw, default)
+        return default
+    if value < minimum:
+        logging.warning("Значение %s=%s меньше %s, используем %s", name, value, minimum, default)
+        return default
+    return value
+
+
+# Поведение при временных сетевых ошибках Telegram API.
+BOT_STARTUP_MAX_RETRIES = _get_int_env("BOT_STARTUP_MAX_RETRIES", 0, minimum=0)
+BOT_STARTUP_RETRY_BASE_DELAY_SECONDS = _get_float_env(
+    "BOT_STARTUP_RETRY_BASE_DELAY_SECONDS", 2.0, minimum=0.1
+)
+BOT_STARTUP_RETRY_MAX_DELAY_SECONDS = _get_float_env(
+    "BOT_STARTUP_RETRY_MAX_DELAY_SECONDS", 30.0, minimum=0.1
+)
