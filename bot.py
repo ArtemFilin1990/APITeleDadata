@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from config import (
     BOT_STARTUP_MAX_RETRIES,
@@ -32,6 +33,21 @@ def setup_logging() -> None:
     logging.getLogger("aiogram").setLevel(logging.WARNING)
 
 
+async def setup_commands(bot: Bot) -> None:
+    """Регистрирует команды меню бота для русской локали."""
+
+    commands = [
+        BotCommand(command="start", description="Запуск"),
+        BotCommand(command="help", description="Помощь/меню"),
+        BotCommand(command="find", description="Найти компанию по ИНН (10/12 цифр)"),
+    ]
+    await bot.set_my_commands(
+        commands=commands,
+        scope=BotCommandScopeDefault(),
+        language_code="ru",
+    )
+
+
 async def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -49,6 +65,7 @@ async def main() -> None:
         dp.include_router(router)
 
         try:
+            await setup_commands(bot)
             await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
             return
         except TelegramNetworkError as exc:
