@@ -135,6 +135,7 @@ docker run -d --env-file .env --name inn-bot inn-checker-bot
 |-----------|-----------|
 | Фреймворк бота | aiogram 3.x |
 | HTTP-клиент | aiohttp |
+| Справочник статусов | party-state.csv (hflabs/party-state) |
 | OpenAI SDK | openai (Responses API) |
 | FSM | aiogram FSM (MemoryStorage) |
 | Конфигурация | python-dotenv |
@@ -145,6 +146,7 @@ docker run -d --env-file .env --name inn-bot inn-checker-bot
 - DaData не нашла компанию → «Данные не найдены»
 - Ошибка API (сеть, авторизация) → понятное сообщение пользователю + лог
 - Длинный ответ (>4096 символов) → автоматическое разбиение на части
+- Расшифровка кода статуса ЕГРЮЛ/ЕГРИП (если DaData возвращает `state.code`) по официальному справочнику [hflabs/party-state](https://github.com/hflabs/party-state/blob/master/party-state.csv), включая номер кода в ответе.
 
 ## Лицензия
 
