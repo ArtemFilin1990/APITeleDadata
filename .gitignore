@@ -8,3 +8,10 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .venv/
+
+# Build/archives and local extracted copies
+*.zip
+extracted/
+
+# Local ad-hoc pytest cache artifacts
+*.pytest_cache-v-cache-*
