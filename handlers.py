@@ -37,21 +37,28 @@ from keyboards import (
     inline_actions_kb,
     reply_main_menu_kb,
 )
-from validators import validate_inn
+from validators import parse_inns, validate_company_id
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-START_TEXT = "Привет 😊\nВведите ИНН (10 или 12 цифр) — соберу карточку и риски."
-HELLO_TEXT = "Я на месте 🙂\nНажмите «🔎 Проверить ИНН» или просто отправьте ИНН."
-RESTART_TEXT = "Начинаем заново.\nВведите ИНН (10 или 12 цифр) — только цифры."
-ASK_INN_TEXT = "Введите ИНН: 10 или 12 цифр, без пробелов.\nПример: 3525405517"
+START_TEXT = "Привет 😊\nВведите ИНН/ОГРН — соберу карточку и риски."
+HELLO_TEXT = "Я на месте 🙂\nНажмите «🔎 Проверить ИНН» или просто отправьте ИНН/ОГРН."
+RESTART_TEXT = "Начинаем заново.\nВведите ИНН/ОГРН — только цифры."
+ASK_INN_TEXT = "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517"
 ERR_DIGITS_TEXT = "Упс 🙂 Нужны только цифры без пробелов. Попробуйте ещё раз."
-ERR_LEN_TEXT = "ИНН должен быть 10 или 12 цифр. Пример: 3525405517"
+ERR_LEN_TEXT = "ИНН/ОГРН должен быть 10/12/13/15 цифр. Пример: 3525405517"
 
 
 class CheckINN(StatesGroup):
     waiting_inn = State()
+
+
+def _build_result_totals(found: int, not_found: int, invalid: list[str]) -> str:
+    lines = [f"Итог: найдено {found}, не найдено {not_found}."]
+    if invalid:
+        lines.append(f"Невалидные значения: {', '.join(invalid)}")
+    return "\n".join(lines)
 
 
 def _v(value: str | int | float | None, default: str = "—") -> str:
@@ -402,32 +409,47 @@ async def handle_inn(message: Message, state: FSMContext):
     if text in {BTN_START, BTN_HELLO, BTN_CHECK_INN}:
         return
 
-    if not text.isdigit():
-        await message.answer(ERR_DIGITS_TEXT, reply_markup=reply_main_menu_kb())
+    values = parse_inns(text)
+    if not values:
+        await message.answer(ERR_LEN_TEXT, reply_markup=reply_main_menu_kb())
         return
 
-    valid, _ = validate_inn(text)
-    if not valid:
+    invalid_values = [value for value in values if not validate_company_id(value)[0]]
+    valid_values = [value for value in values if value not in invalid_values]
+    if not valid_values:
         await message.answer(ERR_LEN_TEXT, reply_markup=reply_main_menu_kb())
         return
 
     wait_msg = await message.answer("Ищу данные…", reply_markup=reply_main_menu_kb())
-    company = await fetch_company(text)
-    if company is None:
+
+    found_companies: list[tuple[str, dict]] = []
+    not_found = 0
+    for value in valid_values:
+        company = await fetch_company(value)
+        if company is None:
+            not_found += 1
+            continue
+        found_companies.append((value, company))
+
+    if not found_companies:
+        summary = _build_result_totals(found=0, not_found=not_found, invalid=invalid_values)
         await wait_msg.edit_text(
-            "По этому ИНН данные не найдены. Проверьте номер и попробуйте снова.",
+            "По указанным ИНН/ОГРН данные не найдены.\n" + summary,
             reply_markup=inline_actions_kb(),
         )
         return
 
+    first_value, first_company = found_companies[0]
+    summary = _build_result_totals(found=len(found_companies), not_found=not_found, invalid=invalid_values)
+
     await state.update_data(
-        current_inn=text,
-        current_company=company,
+        current_inn=first_value,
+        current_company=first_company,
         current_page="page:card",
         history=[],
     )
 
-    await wait_msg.edit_text(_build_main_card(company), reply_markup=inline_actions_kb())
+    await wait_msg.edit_text(f"{_build_main_card(first_company)}\n\n{summary}", reply_markup=inline_actions_kb())
 
 
 @router.callback_query(F.data == CB_NAV_HOME)
