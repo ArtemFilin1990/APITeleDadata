@@ -95,5 +95,29 @@ class DadataDirectCachingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls, 1)
 
 
+    async def test_fetch_companies_handles_non_200(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        session = _FakeSession(response=_FakeResponse(status=429, text_data="rate limit"))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies("7707083893")
+
+        self.assertEqual(result, [])
+        self.assertEqual(session.calls, 1)
+
+    async def test_fetch_companies_uses_cache_for_same_key(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "branch"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            first = await dadata_direct.fetch_companies("7707083893", branch_type="MAIN", count=1)
+            second = await dadata_direct.fetch_companies("7707083893", branch_type="MAIN", count=1)
+
+        self.assertEqual(first, [{"value": "branch"}])
+        self.assertEqual(second, [{"value": "branch"}])
+        self.assertEqual(session.calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
