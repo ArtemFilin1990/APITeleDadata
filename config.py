@@ -20,7 +20,6 @@ OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 # Режим работы (на текущем этапе используется polling в bot.py).
 MODE: str = os.getenv("MODE", "polling").lower()
 WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
-PORT: int = int(os.getenv("PORT", "8080"))
 
 # Валидация обязательных переменных
 _required = {
@@ -89,3 +88,8 @@ BOT_STARTUP_RETRY_BASE_DELAY_SECONDS = _get_float_env(
 BOT_STARTUP_RETRY_MAX_DELAY_SECONDS = _get_float_env(
     "BOT_STARTUP_RETRY_MAX_DELAY_SECONDS", 30.0, minimum=0.1
 )
+
+# HTTP health/readiness endpoint для container runtime (Amvera, Kubernetes и т.п.)
+HEALTH_HOST = os.getenv("HEALTH_HOST", "0.0.0.0")
+PORT = _get_int_env("PORT", 8080, minimum=1)
+HEALTH_ENABLED = os.getenv("HEALTH_ENABLED", "1").strip().lower() not in {"0", "false", "no"}

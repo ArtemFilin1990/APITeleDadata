@@ -19,6 +19,7 @@
 - Пакетная обработка: несколько ИНН/ОГРН через пробел, запятую или с новой строки
 - Карточка в 1 экран + кнопки: «Подробнее», «Экспорт», «В CRM»
 - In-memory TTL-кэш запросов к DaData (30 минут) для снижения расхода лимитов
+- В контейнерном окружении поднимается HTTP endpoint для проверок раннера: `GET /healthz` (liveness) и `GET /readyz` (readiness) на `PORT` (по умолчанию `8080`).
 
 ## Структура проекта
 
@@ -76,6 +77,8 @@ OPENAI_API_KEY=...       # требуется только для MCP
 MODE=polling
 WEBHOOK_URL=https://<domain>/tg/webhook
 PORT=8080
+HEALTH_ENABLED=1
+HEALTH_HOST=0.0.0.0
 
 # Опционально: повторы при временных сетевых ошибках Telegram API
 BOT_STARTUP_MAX_RETRIES=5
