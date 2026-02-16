@@ -27,6 +27,10 @@ def _cache_key(query: str, branch_type: str | None = None) -> str:
 
 async def fetch_companies(query: str, branch_type: str | None = None, count: int = 20) -> list[dict]:
     """Запрашивает список компаний/филиалов по ИНН/ОГРН через DaData API."""
+    if not DADATA_API_KEY:
+        logger.warning("Запрос к DaData пропущен: не задан DADATA_API_KEY|DADATA_TOKEN")
+        return []
+
     cache_key = _cache_key(query, branch_type)
 
     # Выбираем кэш в зависимости от типа запроса:

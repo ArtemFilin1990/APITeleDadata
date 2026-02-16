@@ -86,6 +86,12 @@ class DadataDirectErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
             result = await dadata_direct.fetch_company("7707083893")
         self.assertIsNone(result)
 
+
+    async def test_fetch_company_returns_none_when_dadata_key_missing(self):
+        with patch("dadata_direct.DADATA_API_KEY", ""):
+            result = await dadata_direct.fetch_company("7707083893")
+        self.assertIsNone(result)
+
     async def test_fetch_company_returns_first_suggestion(self):
         payload = {"suggestions": [{"value": "first"}, {"value": "second"}]}
         session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
