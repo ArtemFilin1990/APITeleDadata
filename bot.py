@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN, LOG_LEVEL
 from handlers import router
+from http_client import close_session
 
 
 def setup_logging() -> None:
@@ -39,6 +40,7 @@ async def main() -> None:
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        await close_session()
         await bot.session.close()
         logger.info("Бот остановлен.")
 
