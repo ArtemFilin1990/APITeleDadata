@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from datetime import datetime
@@ -16,15 +17,71 @@ logger = logging.getLogger(__name__)
 # Чтобы экономить лимиты DaData: кэш ответов на 30 минут.
 _PARTY_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=5000)
 _BRANCHES_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=2000)
+_DADATA_SEM = asyncio.Semaphore(5)
 
 
-def _cache_key(query: str, branch_type: str | None = None) -> str:
-    return f"{query}:{branch_type or 'ALL'}"
+def _cache_key(
+    query: str,
+    branch_type: str | None = None,
+    kpp: str | None = None,
+    entity_type: str | None = None,
+    statuses: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    statuses_key = ",".join(statuses or [])
+    return f"{query}:{branch_type or 'ALL'}:{kpp or ''}:{entity_type or ''}:{statuses_key}"
 
 
-async def fetch_companies(query: str, branch_type: str | None = None, count: int = 20) -> list[dict]:
-    """Запрашивает список компаний/филиалов по ИНН/ОГРН через DaData API."""
-    cache_key = _cache_key(query, branch_type)
+def _normalize_branch_type(branch_type: str | None) -> str | None:
+    if branch_type is None:
+        return None
+    normalized = branch_type.strip().upper()
+    if normalized not in {"MAIN", "BRANCH"}:
+        raise ValueError("branch_type must be one of: MAIN, BRANCH")
+    return normalized
+
+
+def _normalize_entity_type(entity_type: str | None) -> str | None:
+    if entity_type is None:
+        return None
+    normalized = entity_type.strip().upper()
+    if normalized not in {"LEGAL", "INDIVIDUAL"}:
+        raise ValueError("type must be one of: LEGAL, INDIVIDUAL")
+    return normalized
+
+
+def _normalize_statuses(statuses: list[str] | tuple[str, ...] | None) -> list[str] | None:
+    if statuses is None:
+        return None
+    allowed = {"ACTIVE", "LIQUIDATING", "LIQUIDATED", "BANKRUPT", "REORGANIZING"}
+    normalized: list[str] = []
+    for raw in statuses:
+        value = raw.strip().upper()
+        if value not in allowed:
+            raise ValueError(
+                "status must contain only: ACTIVE, LIQUIDATING, LIQUIDATED, BANKRUPT, REORGANIZING"
+            )
+        normalized.append(value)
+    return normalized
+
+
+async def fetch_companies(
+    query: str,
+    branch_type: str | None = None,
+    count: int = 10,
+    *,
+    kpp: str | None = None,
+    entity_type: str | None = None,
+    statuses: list[str] | tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Запрашивает список компаний/филиалов по ИНН/ОГРН через DaData API.
+
+    Поддерживает фильтры DaData findById/party: kpp, type, status.
+    """
+    normalized_branch_type = _normalize_branch_type(branch_type)
+    normalized_type = _normalize_entity_type(entity_type)
+    normalized_statuses = _normalize_statuses(statuses)
+
+    cache_key = _cache_key(query, normalized_branch_type, kpp, normalized_type, normalized_statuses)
     cached = _BRANCHES_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -35,17 +92,26 @@ async def fetch_companies(query: str, branch_type: str | None = None, count: int
         "Authorization": f"Token {DADATA_API_KEY}",
     }
     payload: dict[str, str | int] = {"query": query, "count": max(1, min(count, 300))}
-    if branch_type:
-        payload["branch_type"] = branch_type
+    if normalized_branch_type:
+        payload["branch_type"] = normalized_branch_type
+    if kpp:
+        payload["kpp"] = kpp.strip()
+
+    if normalized_type:
+        payload["type"] = normalized_type
+
+    if normalized_statuses:
+        payload["status"] = normalized_statuses
 
     try:
-        session = get_session()
-        async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                logger.error("DaData HTTP %s: %s", resp.status, body[:500])
-                return []
-            data = await resp.json()
+        async with _DADATA_SEM:
+            session = get_session()
+            async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.error("DaData HTTP %s: %s", resp.status, body[:500])
+                    return []
+                data = await resp.json()
     except Exception as exc:
         logger.exception("Ошибка запроса к DaData: %s", exc)
         return []
@@ -71,7 +137,7 @@ async def fetch_company(query: str) -> dict | None:
     return item
 
 
-async def fetch_branches(query: str, count: int = 20) -> list[dict]:
+async def fetch_branches(query: str, count: int = 10) -> list[dict]:
     """Возвращает филиалы организации по ИНН/ОГРН."""
     return await fetch_companies(query=query, branch_type="BRANCH", count=count)
 

@@ -31,9 +31,11 @@ class _FakeSession:
     def __init__(self, response=None):
         self._response = response
         self.calls = 0
+        self.last_kwargs = None
 
     def post(self, *args, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         return self._response
 
 
@@ -93,6 +95,88 @@ class DadataDirectCachingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first, {"value": "first"})
         self.assertEqual(second, {"value": "first"})
         self.assertEqual(session.calls, 1)
+
+
+
+    async def test_fetch_companies_default_count_is_10(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "default-count"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies("7707083893")
+
+        self.assertEqual(result, [{"value": "default-count"}])
+        self.assertIsNotNone(session.last_kwargs)
+        self.assertEqual(session.last_kwargs["json"]["count"], 10)
+
+    async def test_fetch_companies_handles_non_200(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        session = _FakeSession(response=_FakeResponse(status=429, text_data="rate limit"))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies("7707083893")
+
+        self.assertEqual(result, [])
+        self.assertEqual(session.calls, 1)
+
+    async def test_fetch_companies_uses_cache_for_same_key(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "branch"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            first = await dadata_direct.fetch_companies("7707083893", branch_type="main", count=1)
+            second = await dadata_direct.fetch_companies("7707083893", branch_type="MAIN", count=1)
+
+        self.assertEqual(first, [{"value": "branch"}])
+        self.assertEqual(second, [{"value": "branch"}])
+        self.assertEqual(session.calls, 1)
+
+    async def test_fetch_companies_sends_optional_filters(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "filtered"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies(
+                "7707083893",
+                branch_type="MAIN",
+                count=10,
+                kpp="540602001",
+                entity_type="legal",
+                statuses=["active"],
+            )
+
+        self.assertEqual(result, [{"value": "filtered"}])
+        self.assertIsNotNone(session.last_kwargs)
+        self.assertEqual(
+            session.last_kwargs["json"],
+            {
+                "query": "7707083893",
+                "count": 10,
+                "branch_type": "MAIN",
+                "kpp": "540602001",
+                "type": "LEGAL",
+                "status": ["ACTIVE"],
+            },
+        )
+
+    async def test_fetch_companies_invalid_status_raises_value_error(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        with self.assertRaises(ValueError):
+            await dadata_direct.fetch_companies("7707083893", statuses=["UNKNOWN"])
+
+
+    async def test_fetch_companies_invalid_branch_type_raises_value_error(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        with self.assertRaises(ValueError):
+            await dadata_direct.fetch_companies("7707083893", branch_type="HEAD")
+
+    async def test_fetch_companies_invalid_type_raises_value_error(self):
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        with self.assertRaises(ValueError):
+            await dadata_direct.fetch_companies("7707083893", entity_type="company")
 
 
 if __name__ == "__main__":
