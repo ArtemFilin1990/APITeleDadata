@@ -3,7 +3,7 @@ VENV ?= .venv
 PIP := $(VENV)/bin/pip
 PY := $(VENV)/bin/python
 
-.PHONY: install run-prod test
+.PHONY: install run-prod run-telebot test
 
 install:
 	$(PYTHON) -m venv $(VENV)
@@ -15,3 +15,6 @@ run-prod:
 
 test:
 	$(PY) -m pytest -q
+
+run-telebot:
+	$(PY) bot_telebot.py
