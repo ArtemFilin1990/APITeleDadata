@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import sys
 
@@ -11,9 +12,10 @@ import telebot
 from config import LOG_LEVEL, TELEGRAM_BOT_TOKEN
 from dadata_direct import fetch_company, format_company_short_card
 from http_client import close_session
-from validators import validate_inn
+from validators import parse_inns, validate_company_id
 
 BOT = telebot.TeleBot(token=TELEGRAM_BOT_TOKEN, parse_mode="HTML")
+MAX_BATCH_SIZE = 10
 
 
 def setup_logging() -> None:
@@ -33,30 +35,56 @@ def _run_async(coro):
 
 @BOT.message_handler(commands=["start"])
 def handle_start(message) -> None:
-    BOT.reply_to(message, "Привет 😊\nВведите ИНН (10 или 12 цифр) — соберу карточку компании.")
+    BOT.reply_to(message, "Привет 😊\nВведите ИНН/ОГРН — соберу карточку компании.")
 
 
 @BOT.message_handler(func=lambda message: bool(message.text))
 def handle_inn(message) -> None:
-    text = message.text.strip()
-    is_valid, validation_msg = validate_inn(text)
-    if not is_valid:
-        BOT.reply_to(message, f"❌ {validation_msg}")
+    values = list(dict.fromkeys(parse_inns(message.text.strip())))
+    if not values:
+        BOT.reply_to(message, "❌ Введите ИНН/ОГРН: 10/12/13/15 цифр.")
+        return
+
+    if len(values) > MAX_BATCH_SIZE:
+        BOT.reply_to(message, f"❌ За один запрос можно проверить не более {MAX_BATCH_SIZE} ИНН/ОГРН.")
+        return
+
+    invalid_values = [value for value in values if not validate_company_id(value)[0]]
+    valid_values = [value for value in values if value not in invalid_values]
+    if not valid_values:
+        BOT.reply_to(message, "❌ Введите ИНН/ОГРН: 10/12/13/15 цифр.")
         return
 
     BOT.send_chat_action(message.chat.id, "typing")
-    try:
-        company = _run_async(fetch_company(text))
-    except Exception:
-        logging.exception("Ошибка обработки ИНН")
-        BOT.reply_to(message, "⚠️ Не удалось получить данные. Попробуйте позже.")
+    first_company = None
+    found = 0
+    not_found = 0
+    for value in valid_values:
+        try:
+            company = _run_async(fetch_company(value))
+        except Exception:
+            logging.exception("Ошибка обработки ИНН/ОГРН")
+            BOT.reply_to(message, "⚠️ Не удалось получить данные. Попробуйте позже.")
+            return
+
+        if not company:
+            not_found += 1
+            continue
+
+        found += 1
+        if first_company is None:
+            first_company = company
+
+    if first_company is None:
+        BOT.reply_to(message, f"По указанным ИНН/ОГРН данные не найдены.\n\nИтог: найдено 0, не найдено {not_found}.")
         return
 
-    if not company:
-        BOT.reply_to(message, "По этому ИНН/ОГРН данные не найдены.")
-        return
+    summary = f"\n\nИтог: найдено {found}, не найдено {not_found}."
+    if invalid_values:
+        safe_invalid = ", ".join(html.escape(item) for item in invalid_values)
+        summary += f"\nНевалидные значения: {safe_invalid}"
 
-    BOT.reply_to(message, format_company_short_card(company))
+    BOT.reply_to(message, format_company_short_card(first_company) + summary)
 
 
 def main() -> None:
