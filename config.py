@@ -25,13 +25,17 @@ PORT: int = int(os.getenv("PORT", "8080"))
 # Валидация обязательных переменных
 _required = {
     "TELEGRAM_BOT_TOKEN|BOT_TOKEN": TELEGRAM_BOT_TOKEN,
-    "DADATA_API_KEY|DADATA_TOKEN": DADATA_API_KEY,
 }
 
 _missing = [k for k, v in _required.items() if not v]
 if _missing:
     logging.error("Не заданы переменные окружения: %s", ", ".join(_missing))
     sys.exit(1)
+
+if not DADATA_API_KEY:
+    logging.warning(
+        "Не задан DADATA_API_KEY|DADATA_TOKEN: прямые запросы к DaData будут недоступны до установки переменной окружения."
+    )
 
 # DaData endpoints
 DADATA_FIND_URL = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party"
