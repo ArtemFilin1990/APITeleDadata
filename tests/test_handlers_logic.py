@@ -4,7 +4,7 @@ import unittest
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
 os.environ.setdefault("DADATA_API_KEY", "test-dadata-api-key")
 
-from handlers import HELP_TEXT, START_TEXT, _build_details_card, _build_result_totals, _format_page, _money, _split_for_telegram
+ main
 from keyboards import CB_PAGE_DOCUMENTS, CB_PAGE_FOUNDERS, CB_PAGE_MANAGEMENT, CB_PAGE_TAXES
 
 
