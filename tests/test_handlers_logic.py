@@ -4,7 +4,7 @@ import unittest
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
 os.environ.setdefault("DADATA_API_KEY", "test-dadata-api-key")
 
-from handlers import START_TEXT, _build_details_card, _build_result_totals, _format_page, _money, _split_for_telegram
+ main
 from keyboards import CB_PAGE_DOCUMENTS, CB_PAGE_FOUNDERS, CB_PAGE_MANAGEMENT, CB_PAGE_TAXES
 
 
@@ -18,6 +18,11 @@ class HandlerSummaryTests(unittest.TestCase):
         self.assertIn("Итог: найдено 1, не найдено 0.", text)
         self.assertIn("не только цифры: 12AB", text)
         self.assertIn("неверная длина: 123", text)
+
+    def test_help_text_mentions_supported_commands(self):
+        self.assertIn("/start", HELP_TEXT)
+        self.assertIn("/help", HELP_TEXT)
+        self.assertIn("/find", HELP_TEXT)
 
 
 class TelegramSplitTests(unittest.TestCase):

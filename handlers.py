@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -46,6 +47,13 @@ START_TEXT = (
     "Бесплатный быстрый сервис проверки контрагентов ⚡\n"
     "Только легальные данные из официальных источников.\n\n"
     "Введите ИНН/ОГРН — соберу карточку и ключевые риски."
+)
+HELP_TEXT = (
+    "Команды:\n"
+    "/start — приветствие\n"
+    "/help — это сообщение\n"
+    "/find — ввести ИНН/ОГРН для проверки\n\n"
+    "Также можно нажать кнопку «🔎 Проверить ИНН»."
 )
 ASK_INN_TEXT = "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517"
 ERR_DIGITS_TEXT = "Упс 🙂 Нужны только цифры без пробелов. Попробуйте ещё раз."
@@ -540,6 +548,17 @@ async def _go_input_inn(message: Message, state: FSMContext) -> None:
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(START_TEXT, reply_markup=reply_main_menu_kb())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(HELP_TEXT, reply_markup=reply_main_menu_kb())
+
+
+@router.message(Command("find"))
+async def cmd_find(message: Message, state: FSMContext):
+    await _go_input_inn(message, state)
 
 
 @router.message(F.text == BTN_CHECK_INN)
