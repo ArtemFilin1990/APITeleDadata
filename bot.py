@@ -65,6 +65,8 @@ async def main() -> None:
         dp.include_router(router)
 
         try:
+            # Если для бота ранее был включён webhook, polling не сможет получать update'ы.
+            await bot.delete_webhook(drop_pending_updates=False)
             await setup_commands(bot)
             await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
             return

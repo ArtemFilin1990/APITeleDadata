@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -30,8 +31,10 @@ from keyboards import (
     CB_PAGE_FINANCE,
     CB_PAGE_FOUNDERS,
     CB_PAGE_INSPECTIONS,
+    CB_PAGE_MANAGEMENT,
     CB_PAGE_SUCCESSOR,
     CB_PAGE_TAXES,
+    CB_PAGE_DOCUMENTS,
     inline_actions_kb,
     reply_main_menu_kb,
 )
@@ -44,6 +47,13 @@ START_TEXT = (
     "Бесплатный быстрый сервис проверки контрагентов ⚡\n"
     "Только легальные данные из официальных источников.\n\n"
     "Введите ИНН/ОГРН — соберу карточку и ключевые риски."
+)
+HELP_TEXT = (
+    "Команды:\n"
+    "/start — приветствие\n"
+    "/help — это сообщение\n"
+    "/find — ввести ИНН/ОГРН для проверки\n\n"
+    "Также можно нажать кнопку «🔎 Проверить ИНН»."
 )
 ASK_INN_TEXT = "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517"
 ERR_DIGITS_TEXT = "Упс 🙂 Нужны только цифры без пробелов. Попробуйте ещё раз."
@@ -121,10 +131,24 @@ def _date_from_ms(value: int | None) -> str:
         return "—"
 
 
-def _money(value: int | float | None) -> str:
+def _money(value: int | float | str | None) -> str:
     if value is None:
         return "—"
-    return f"{value:,.0f} ₽".replace(",", " ")
+    if isinstance(value, str):
+        raw = value.strip().replace(" ", "")
+        if not raw:
+            return "—"
+        raw = raw.replace(",", ".")
+    else:
+        raw = value
+
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        # Безопасный fallback, если API вернуло нечисловое значение.
+        return _v(str(value))
+
+    return f"{amount:,.0f} ₽".replace(",", " ")
 
 
 def _d(company: dict) -> dict:
@@ -229,6 +253,11 @@ def _build_details_card(company: dict) -> str:
 
     year_suffix = f" ({fin_year})" if fin_year else ""
 
+    founders = d.get("founders") if isinstance(d.get("founders"), list) else []
+    managers = d.get("managers") if isinstance(d.get("managers"), list) else []
+    licenses = d.get("licenses") if isinstance(d.get("licenses"), list) else []
+    documents = d.get("documents") if isinstance(d.get("documents"), list) else []
+
     return "\n".join(
         [
             "Подробнее 📄",
@@ -241,6 +270,9 @@ def _build_details_card(company: dict) -> str:
             f"👥 Штат: {employees}{year_suffix} • 💵 Ср. зарплата: {avg_salary}{year_suffix}",
             f"❌️ Статус: {status}",
             f"✅️Правопреемник: {successor_name}",
+            f"👥 Учредителей в карточке: {len(founders)}",
+            f"🧑‍💼 Руководителей в истории: {len(managers)}",
+            f"📜 Лицензии/документы: {len(licenses)}/{len(documents)}",
             "📍 Юридический адрес",
             f"{addr}",
             "🏷️ Деятельность",
@@ -303,6 +335,71 @@ def _full_contacts(company: dict) -> str:
     lines.append("Тел.: " + (", ".join(phones) if phones else "—"))
     lines.append("Email: " + (", ".join(emails) if emails else "—"))
     lines.append("Сайт: " + (", ".join(websites) if websites else "—"))
+    return "\n".join(lines)
+
+
+def _format_people(items: list[dict], *, with_share: bool = False) -> str:
+    if not items:
+        return "данные не предоставлены"
+
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        person_name = _v(item.get("name") or item.get("fio") or item.get("value"))
+        if person_name == "—":
+            continue
+        role = _v(item.get("post"), default="")
+        share_text = ""
+        if with_share:
+            share_obj = item.get("share") if isinstance(item.get("share"), dict) else {}
+            share_type = _v(share_obj.get("type"), default="")
+            share_value = share_obj.get("value")
+            if share_value is not None:
+                share_text = f" — доля: {_money(share_value)}"
+                if share_type:
+                    share_text += f" ({share_type})"
+        if role:
+            lines.append(f"- {person_name} ({role}){share_text}")
+        else:
+            lines.append(f"- {person_name}{share_text}")
+
+    return "\n".join(lines) if lines else "данные не предоставлены"
+
+
+def _format_documents(company: dict) -> str:
+    d = _d(company)
+    documents = d.get("documents") if isinstance(d.get("documents"), list) else []
+    licenses = d.get("licenses") if isinstance(d.get("licenses"), list) else []
+
+    lines = ["📜 Лицензии и документы"]
+
+    if licenses:
+        lines.append(f"Лицензии: {len(licenses)}")
+        for item in licenses[:5]:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f"- {_v(item.get('series'))} {_v(item.get('number'))}, выдана {_date_from_ms(item.get('issue_date'))}"
+            )
+        if len(licenses) > 5:
+            lines.append(f"… и ещё {len(licenses) - 5}")
+    else:
+        lines.append("Лицензии: данные не предоставлены")
+
+    if documents:
+        lines.append("")
+        lines.append(f"Документы: {len(documents)}")
+        for item in documents[:5]:
+            if not isinstance(item, dict):
+                continue
+            lines.append(f"- {_v(item.get('type'))} № {_v(item.get('number'))} от {_date_from_ms(item.get('issue_date'))}")
+        if len(documents) > 5:
+            lines.append(f"… и ещё {len(documents) - 5}")
+    else:
+        lines.append("")
+        lines.append("Документы: данные не предоставлены")
+
     return "\n".join(lines)
 
 
@@ -390,16 +487,40 @@ def _format_page(company: dict, page: str) -> str:
         ])
 
     if page == CB_PAGE_FOUNDERS:
-        return "\n".join([
-            "👥 Учредители",
-            "данные не предоставлены",
-        ])
+        founders = d.get("founders") if isinstance(d.get("founders"), list) else []
+        return "\n".join(["👥 Учредители", _format_people(founders, with_share=True)])
+
+    if page == CB_PAGE_MANAGEMENT:
+        managers = d.get("managers") if isinstance(d.get("managers"), list) else []
+        management = d.get("management") if isinstance(d.get("management"), dict) else {}
+        lines = ["🧑‍💼 Руководство"]
+        if management:
+            lines.append(
+                f"Текущий руководитель: {_v(management.get('post'), default='руководитель')} — {_v(management.get('name'))}"
+            )
+            lines.append(f"С {_date_from_ms(management.get('start_date'))}")
+            lines.append("")
+        lines.append("История руководителей:")
+        lines.append(_format_people(managers))
+        return "\n".join(lines)
 
     if page == CB_PAGE_TAXES:
-        return "\n".join([
-            "🧾 Налоги",
-            "данные не предоставлены",
-        ])
+        auth = d.get("authorities", {}) if isinstance(d.get("authorities"), dict) else {}
+        fts = auth.get("fts_registration") if isinstance(auth.get("fts_registration"), dict) else {}
+        debts = d.get("fns_debt") if isinstance(d.get("fns_debt"), dict) else {}
+        tax_system = d.get("tax_system") if isinstance(d.get("tax_system"), dict) else {}
+        return "\n".join(
+            [
+                "🧾 Налогообложение",
+                f"Налоговый орган: {_v(fts.get('name'))}",
+                f"Постановка на учёт: {_date_from_ms(fts.get('date'))}",
+                f"Система налогообложения: {_v(tax_system.get('name') or tax_system.get('code'))}",
+                f"Недоимка/пени/штрафы: {_money(debts.get('debt'))}",
+            ]
+        )
+
+    if page == CB_PAGE_DOCUMENTS:
+        return _format_documents(company)
 
     if page == CB_PAGE_SUCCESSOR:
         succ = d.get("successors") or []
@@ -427,6 +548,17 @@ async def _go_input_inn(message: Message, state: FSMContext) -> None:
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(START_TEXT, reply_markup=reply_main_menu_kb())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(HELP_TEXT, reply_markup=reply_main_menu_kb())
+
+
+@router.message(Command("find"))
+async def cmd_find(message: Message, state: FSMContext):
+    await _go_input_inn(message, state)
 
 
 @router.message(F.text == BTN_CHECK_INN)
@@ -577,7 +709,9 @@ async def on_crm(callback: CallbackQuery, state: FSMContext):
             CB_PAGE_CONTACTS,
             CB_PAGE_AUTHORITIES,
             CB_PAGE_FOUNDERS,
+            CB_PAGE_MANAGEMENT,
             CB_PAGE_TAXES,
+            CB_PAGE_DOCUMENTS,
             CB_PAGE_FEDRESURS,
             CB_PAGE_EFRSB,
             CB_PAGE_DETAILS,

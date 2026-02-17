@@ -25,7 +25,9 @@ CB_PAGE_SUCCESSOR = "page:successor"
 CB_PAGE_CONTACTS = "page:contacts"
 CB_PAGE_AUTHORITIES = "page:authorities"
 CB_PAGE_FOUNDERS = "page:founders"
+CB_PAGE_MANAGEMENT = "page:management"
 CB_PAGE_TAXES = "page:taxes"
+CB_PAGE_DOCUMENTS = "page:documents"
 
 CB_PAGE_FEDRESURS = "page:fedresurs"
 CB_PAGE_EFRSB = "page:efrsb"
@@ -56,6 +58,14 @@ def inline_actions_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="📄 Подробнее", callback_data=CB_PAGE_DETAILS),
                 InlineKeyboardButton(text="📤 Экспорт", callback_data=CB_ACT_EXPORT),
                 InlineKeyboardButton(text="🧩 В CRM", callback_data=CB_ACT_CRM),
+            ],
+            [
+                InlineKeyboardButton(text="👥 Учредители", callback_data=CB_PAGE_FOUNDERS),
+                InlineKeyboardButton(text="🧑‍💼 Руководство", callback_data=CB_PAGE_MANAGEMENT),
+            ],
+            [
+                InlineKeyboardButton(text="🧾 Налоги", callback_data=CB_PAGE_TAXES),
+                InlineKeyboardButton(text="📜 Лицензии/док-ты", callback_data=CB_PAGE_DOCUMENTS),
             ],
             [
                 InlineKeyboardButton(text="Новый ИНН", callback_data=CB_ACT_NEW_INN),
