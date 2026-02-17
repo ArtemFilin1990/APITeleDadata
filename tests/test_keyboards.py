@@ -5,10 +5,16 @@ from keyboards import (
     CB_ACT_EXPORT,
     CB_NAV_BACK,
     CB_NAV_HOME,
+    CB_PAGE_CASES,
+    CB_PAGE_CONTACTS,
+    CB_PAGE_DEBTS,
     CB_PAGE_DETAILS,
     CB_PAGE_DOCUMENTS,
     CB_PAGE_FOUNDERS,
+    CB_PAGE_INSPECTIONS,
     CB_PAGE_MANAGEMENT,
+    CB_PAGE_CONTRACTS,
+    CB_PAGE_AUTHORITIES,
     CB_PAGE_TAXES,
     BTN_CHECK_INN,
     inline_actions_kb,
@@ -48,9 +54,21 @@ class InlineKeyboardTests(unittest.TestCase):
         self.assertEqual(founders_row[0].callback_data, CB_PAGE_FOUNDERS)
         self.assertEqual(founders_row[1].callback_data, CB_PAGE_MANAGEMENT)
 
-        taxes_row = kb.inline_keyboard[2]
+        risks_row = kb.inline_keyboard[2]
+        self.assertEqual(risks_row[0].callback_data, CB_PAGE_CASES)
+        self.assertEqual(risks_row[1].callback_data, CB_PAGE_DEBTS)
+
+        checks_row = kb.inline_keyboard[3]
+        self.assertEqual(checks_row[0].callback_data, CB_PAGE_INSPECTIONS)
+        self.assertEqual(checks_row[1].callback_data, CB_PAGE_CONTACTS)
+
+        taxes_row = kb.inline_keyboard[4]
         self.assertEqual(taxes_row[0].callback_data, CB_PAGE_TAXES)
         self.assertEqual(taxes_row[1].callback_data, CB_PAGE_DOCUMENTS)
+
+        authorities_row = kb.inline_keyboard[5]
+        self.assertEqual(authorities_row[0].callback_data, CB_PAGE_AUTHORITIES)
+        self.assertEqual(authorities_row[1].callback_data, CB_PAGE_CONTRACTS)
 
 
 if __name__ == "__main__":

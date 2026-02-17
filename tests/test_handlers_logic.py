@@ -119,7 +119,14 @@ class DadataAllFieldsDumpTests(unittest.TestCase):
         self.assertIn("name.full_with_opf: ООО Тест", text)
         self.assertIn("phones[0].value: +7 900 000-00-00", text)
 
-    def test_build_all_fields_block_limits_size(self):
+    def test_build_all_fields_block_shows_all_lines_by_default(self):
+        company = {"data": {f"k{i}": i for i in range(10)}}
+        text = _build_all_fields_block(company)
+        self.assertIn("k0: 0", text)
+        self.assertIn("k9: 9", text)
+        self.assertNotIn("… и ещё", text)
+
+    def test_build_all_fields_block_limits_size_when_requested(self):
         company = {"data": {f"k{i}": i for i in range(10)}}
         text = _build_all_fields_block(company, max_lines=3)
         self.assertIn("… и ещё", text)

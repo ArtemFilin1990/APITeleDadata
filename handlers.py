@@ -228,7 +228,7 @@ def _iter_data_paths(value: object, prefix: str = ""):
     yield prefix, _normalize_dump_value(value)
 
 
-def _build_all_fields_block(company: dict, max_lines: int = 200) -> str:
+def _build_all_fields_block(company: dict, max_lines: int | None = None) -> str:
     d = _d(company)
     if not isinstance(d, dict) or not d:
         return "Все поля DaData: нет данных."
@@ -239,7 +239,7 @@ def _build_all_fields_block(company: dict, max_lines: int = 200) -> str:
         if not path:
             continue
         total += 1
-        if total > max_lines:
+        if max_lines is not None and total > max_lines:
             lines.append(f"… и ещё {total - max_lines} полей.")
             break
         lines.append(f"• {path}: {value}")
