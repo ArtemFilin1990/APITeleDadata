@@ -73,6 +73,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# или использовать профили окружений из env/:
+# cp env/.env.dev.example .env
 python bot.py
 ```
 
@@ -81,15 +83,15 @@ python bot.py
 Минимум для direct-режима:
 
 ```env
-TELEGRAM_BOT_TOKEN=...
-DADATA_API_KEY=...
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+DADATA_API_KEY=your-dadata-api-key
 ```
 
 Для MCP-режима дополнительно:
 
 ```env
-DADATA_SECRET_KEY=...
-OPENAI_API_KEY=...
+DADATA_SECRET_KEY=your-dadata-secret-key
+OPENAI_API_KEY=your-openai-api-key
 ```
 
 Поддерживаемые алиасы:
@@ -97,6 +99,21 @@ OPENAI_API_KEY=...
 - `BOT_TOKEN` → `TELEGRAM_BOT_TOKEN`
 - `DADATA_TOKEN` → `DADATA_API_KEY`
 - `DADATA_SECRET` → `DADATA_SECRET_KEY`
+
+
+Готовые шаблоны окружений:
+
+- `env/.env.dev.example` — локальная разработка (polling + DEBUG).
+- `env/.env.prod.example` — production (webhook + INFO).
+- `env/.env.mcp.example` — добавочные ключи для MCP-режима.
+
+Примеры применения:
+
+```bash
+cp env/.env.dev.example .env
+# или
+cp env/.env.prod.example .env
+```
 
 Доп. настройки:
 
