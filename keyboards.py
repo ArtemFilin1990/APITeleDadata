@@ -8,8 +8,6 @@ from aiogram.types import (
 )
 
 # Reply menu labels
-BTN_START = "🏁 Старт"
-BTN_HELLO = "👋 Привет"
 BTN_CHECK_INN = "🔎 Проверить ИНН"
 
 # Navigation callback_data (единый стандарт)
@@ -43,7 +41,6 @@ def reply_main_menu_kb() -> ReplyKeyboardMarkup:
     """Постоянное меню внизу чата."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_START), KeyboardButton(text=BTN_HELLO)],
             [KeyboardButton(text=BTN_CHECK_INN)],
         ],
         resize_keyboard=True,

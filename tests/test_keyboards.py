@@ -7,8 +7,6 @@ from keyboards import (
     CB_NAV_HOME,
     CB_PAGE_DETAILS,
     BTN_CHECK_INN,
-    BTN_HELLO,
-    BTN_START,
     inline_actions_kb,
     reply_main_menu_kb,
 )
@@ -17,9 +15,8 @@ from keyboards import (
 class ReplyKeyboardTests(unittest.TestCase):
     def test_reply_menu_layout(self):
         kb = reply_main_menu_kb()
-        self.assertEqual(kb.keyboard[0][0].text, BTN_START)
-        self.assertEqual(kb.keyboard[0][1].text, BTN_HELLO)
-        self.assertEqual(kb.keyboard[1][0].text, BTN_CHECK_INN)
+        self.assertEqual(len(kb.keyboard), 1)
+        self.assertEqual(kb.keyboard[0][0].text, BTN_CHECK_INN)
 
 
 class InlineKeyboardTests(unittest.TestCase):
