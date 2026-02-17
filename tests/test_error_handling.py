@@ -108,12 +108,12 @@ class DadataMcpErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("OPENAI_API_KEY", result)
         self.assertIn("DADATA_SECRET_KEY", result)
 
-    async def test_fetch_company_via_mcp_returns_error_on_openai_exception(self):
+    async def test_fetch_company_via_mcp_returns_safe_error_on_openai_exception(self):
         fake_client = _FakeOpenAIClient(should_raise=True)
         with patch("dadata_mcp.OpenAI", return_value=fake_client):
             result = await dadata_mcp.fetch_company_via_mcp("7707083893")
-        self.assertIn("Ошибка MCP-запроса", result)
-        self.assertIn("openai-failure", result)
+        self.assertEqual(result, "❌ Временная ошибка MCP-запроса. Попробуйте позже.")
+        self.assertNotIn("openai-failure", result)
 
     async def test_fetch_company_via_mcp_extracts_text(self):
         response = _FakeOpenAIResponse(

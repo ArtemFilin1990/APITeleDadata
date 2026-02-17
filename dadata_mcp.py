@@ -2,7 +2,13 @@
 
 import logging
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+    RateLimitError,
+)
 
 from config import (
     DADATA_API_KEY,
@@ -84,6 +90,15 @@ async def fetch_company_via_mcp(inn: str) -> str:
 
         return result_text
 
-    except Exception as exc:
+    except (APITimeoutError, APIConnectionError):
+        logger.exception("MCP network error for INN %s", inn)
+        return "❌ Временная ошибка MCP-запроса. Попробуйте позже."
+    except AuthenticationError:
+        logger.exception("MCP auth error for INN %s", inn)
+        return "❌ MCP-сервис временно недоступен. Обратитесь к администратору."
+    except RateLimitError:
+        logger.exception("MCP rate limit for INN %s", inn)
+        return "❌ Слишком много запросов к MCP. Попробуйте чуть позже."
+    except Exception:
         logger.exception("MCP error for INN %s", inn)
-        return f"❌ Ошибка MCP-запроса: {exc}"
+        return "❌ Временная ошибка MCP-запроса. Попробуйте позже."
