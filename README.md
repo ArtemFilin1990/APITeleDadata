@@ -94,6 +94,29 @@ DADATA_SECRET_KEY=your-dadata-secret-key
 OPENAI_API_KEY=your-openai-api-key
 ```
 
+### Подключение MCP-сервера в Codex CLI
+
+Если вы хотите использовать DaData MCP через локальный Codex CLI, добавьте stdio-сервер командой:
+
+```bash
+codex mcp add dadata \
+  --env DADATA_API_KEY=your-dadata-api-key \
+  --env DADATA_SECRET_KEY=your-dadata-secret-key \
+  -- your-mcp-stdio-server-command
+```
+
+Где:
+
+- `dadata` — локальный ярлык MCP-сервера в Codex;
+- `--env ...` — переменные окружения, которые будут переданы только процессу MCP-сервера;
+- `your-mcp-stdio-server-command` — команда запуска MCP-сервера в режиме stdio.
+
+После добавления проверьте, что сервер появился в списке:
+
+```bash
+codex mcp list
+```
+
 Поддерживаемые алиасы:
 
 - `BOT_TOKEN` → `TELEGRAM_BOT_TOKEN`
