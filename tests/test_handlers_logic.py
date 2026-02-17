@@ -9,6 +9,7 @@ from keyboards import CB_PAGE_DOCUMENTS, CB_PAGE_FOUNDERS, CB_PAGE_MANAGEMENT, C
 from handlers import (
     HELP_TEXT,
     START_TEXT,
+    _build_all_fields_block,
     _build_details_card,
     _build_result_totals,
     _format_page,
@@ -101,6 +102,27 @@ class PremiumPagesTests(unittest.TestCase):
         self.assertIn("Учредителей в карточке: 0", text)
         self.assertIn("Руководителей в истории: 0", text)
         self.assertIn("Лицензии/документы: 0/0", text)
+
+
+class DadataAllFieldsDumpTests(unittest.TestCase):
+    def test_build_all_fields_block_contains_nested_paths(self):
+        company = {
+            "data": {
+                "inn": "7707083893",
+                "name": {"full_with_opf": "ООО Тест"},
+                "phones": [{"value": "+7 900 000-00-00"}],
+            }
+        }
+
+        text = _build_all_fields_block(company)
+        self.assertIn("Все поля DaData", text)
+        self.assertIn("name.full_with_opf: ООО Тест", text)
+        self.assertIn("phones[0].value: +7 900 000-00-00", text)
+
+    def test_build_all_fields_block_limits_size(self):
+        company = {"data": {f"k{i}": i for i in range(10)}}
+        text = _build_all_fields_block(company, max_lines=3)
+        self.assertIn("… и ещё", text)
 
 
 if __name__ == "__main__":
