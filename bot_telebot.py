@@ -7,6 +7,7 @@ import logging
 import sys
 
 import telebot
+from telebot.types import BotCommand
 
 from config import LOG_LEVEL, TELEGRAM_BOT_TOKEN
 from dadata_direct import fetch_company, format_company_short_card
@@ -31,9 +32,31 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
+def setup_commands() -> None:
+    """Регистрирует команды Telegram Command Menu."""
+    BOT.set_my_commands(
+        commands=[
+            BotCommand("start", "Запуск"),
+            BotCommand("help", "Помощь/меню"),
+            BotCommand("find", "Найти компанию по ИНН (10/12 цифр)"),
+        ],
+        language_code="ru",
+    )
+
+
 @BOT.message_handler(commands=["start"])
 def handle_start(message) -> None:
     BOT.reply_to(message, "Привет 😊\nВведите ИНН/ОГРН — соберу карточку компании.")
+
+
+@BOT.message_handler(commands=["help"])
+def handle_help(message) -> None:
+    BOT.reply_to(message, "Доступные действия:\n/start — запуск\n/help — помощь/меню\n/find — найти компанию по ИНН")
+
+
+@BOT.message_handler(commands=["find"])
+def handle_find(message) -> None:
+    BOT.reply_to(message, "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517")
 
 
 @BOT.message_handler(func=lambda message: bool(message.text))
@@ -84,6 +107,7 @@ def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Бот запускается (pyTelegramBotAPI)…")
+    setup_commands()
     try:
         BOT.infinity_polling(skip_pending=True)
     finally:
