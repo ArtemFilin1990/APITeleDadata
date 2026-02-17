@@ -64,8 +64,20 @@ def inline_actions_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🧑‍💼 Руководство", callback_data=CB_PAGE_MANAGEMENT),
             ],
             [
+                InlineKeyboardButton(text="⚖️ Суды", callback_data=CB_PAGE_CASES),
+                InlineKeyboardButton(text="🚨 Штрафы/долги", callback_data=CB_PAGE_DEBTS),
+            ],
+            [
+                InlineKeyboardButton(text="🧪 Проверки", callback_data=CB_PAGE_INSPECTIONS),
+                InlineKeyboardButton(text="📞 Связи/контакты", callback_data=CB_PAGE_CONTACTS),
+            ],
+            [
                 InlineKeyboardButton(text="🧾 Налоги", callback_data=CB_PAGE_TAXES),
                 InlineKeyboardButton(text="📜 Лицензии/док-ты", callback_data=CB_PAGE_DOCUMENTS),
+            ],
+            [
+                InlineKeyboardButton(text="🏛️ Органы", callback_data=CB_PAGE_AUTHORITIES),
+                InlineKeyboardButton(text="📦 Госконтракты", callback_data=CB_PAGE_CONTRACTS),
             ],
             [
                 InlineKeyboardButton(text="Новый ИНН", callback_data=CB_ACT_NEW_INN),

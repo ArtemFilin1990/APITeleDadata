@@ -9,6 +9,7 @@ from keyboards import CB_PAGE_DOCUMENTS, CB_PAGE_FOUNDERS, CB_PAGE_MANAGEMENT, C
 from handlers import (
     HELP_TEXT,
     START_TEXT,
+    _build_all_fields_block,
     _build_details_card,
     _build_result_totals,
     _format_page,
@@ -18,9 +19,9 @@ from handlers import (
 
 
 class HandlerSummaryTests(unittest.TestCase):
-    def test_start_text_mentions_fast_and_legal_data(self):
-        self.assertIn("Бесплатный быстрый сервис проверки контрагентов", START_TEXT)
-        self.assertIn("Только легальные данные", START_TEXT)
+    def test_start_text_mentions_spy_greeting_and_whisper(self):
+        self.assertIn("Агент на связи", START_TEXT)
+        self.assertIn("Шёпотом: введи ИНН/ОГРН", START_TEXT)
 
     def test_build_result_totals_with_mixed_invalid_values(self):
         text = _build_result_totals(found=1, not_found=0, invalid=["12AB", "123"])
@@ -101,6 +102,34 @@ class PremiumPagesTests(unittest.TestCase):
         self.assertIn("Учредителей в карточке: 0", text)
         self.assertIn("Руководителей в истории: 0", text)
         self.assertIn("Лицензии/документы: 0/0", text)
+
+
+class DadataAllFieldsDumpTests(unittest.TestCase):
+    def test_build_all_fields_block_contains_nested_paths(self):
+        company = {
+            "data": {
+                "inn": "7707083893",
+                "name": {"full_with_opf": "ООО Тест"},
+                "phones": [{"value": "+7 900 000-00-00"}],
+            }
+        }
+
+        text = _build_all_fields_block(company)
+        self.assertIn("Все поля DaData", text)
+        self.assertIn("name.full_with_opf: ООО Тест", text)
+        self.assertIn("phones[0].value: +7 900 000-00-00", text)
+
+    def test_build_all_fields_block_shows_all_lines_by_default(self):
+        company = {"data": {f"k{i}": i for i in range(10)}}
+        text = _build_all_fields_block(company)
+        self.assertIn("k0: 0", text)
+        self.assertIn("k9: 9", text)
+        self.assertNotIn("… и ещё", text)
+
+    def test_build_all_fields_block_limits_size_when_requested(self):
+        company = {"data": {f"k{i}": i for i in range(10)}}
+        text = _build_all_fields_block(company, max_lines=3)
+        self.assertIn("… и ещё", text)
 
 
 if __name__ == "__main__":

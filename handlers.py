@@ -44,9 +44,9 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 START_TEXT = (
-    "Бесплатный быстрый сервис проверки контрагентов ⚡\n"
+    "🕵️ Агент на связи. Работаем тихо и без лишнего шума.\n"
     "Только легальные данные из официальных источников.\n\n"
-    "Введите ИНН/ОГРН — соберу карточку и ключевые риски."
+    "🤫 Шёпотом: введи ИНН/ОГРН."
 )
 HELP_TEXT = (
     "Команды:\n"
@@ -197,6 +197,56 @@ def _build_main_card(company: dict) -> str:
     )
 
 
+
+
+def _normalize_dump_value(value: object) -> str:
+    if isinstance(value, (dict, list)):
+        return "[структура]"
+    if value is None:
+        return "—"
+    return _v(str(value))
+
+
+def _iter_data_paths(value: object, prefix: str = ""):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                continue
+            child_prefix = f"{prefix}.{key}" if prefix else key
+            yield from _iter_data_paths(child, child_prefix)
+        return
+
+    if isinstance(value, list):
+        if not value:
+            yield prefix, "[]"
+            return
+        for idx, child in enumerate(value):
+            child_prefix = f"{prefix}[{idx}]"
+            yield from _iter_data_paths(child, child_prefix)
+        return
+
+    yield prefix, _normalize_dump_value(value)
+
+
+def _build_all_fields_block(company: dict, max_lines: int | None = None) -> str:
+    d = _d(company)
+    if not isinstance(d, dict) or not d:
+        return "Все поля DaData: нет данных."
+
+    lines = ["Все поля DaData (что вернул тариф):"]
+    total = 0
+    for path, value in _iter_data_paths(d):
+        if not path:
+            continue
+        total += 1
+        if max_lines is not None and total > max_lines:
+            lines.append(f"… и ещё {total - max_lines} полей.")
+            break
+        lines.append(f"• {path}: {value}")
+
+    if total == 0:
+        lines.append("• нет непустых полей")
+    return "\n".join(lines)
 def _build_details_card(company: dict) -> str:
     d = _d(company)
     name = d.get("name", {}) or {}
@@ -285,6 +335,8 @@ def _build_details_card(company: dict) -> str:
             f"Тел.: {_v(phones_line)}",
             f"Email: {_v(emails_line)}",
             f"Сайт: {_v(site_line)}",
+            "",
+            _build_all_fields_block(company),
         ]
     )
 
