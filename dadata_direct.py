@@ -6,10 +6,16 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 from datetime import datetime
 
 from cache import TTLCache
+
+try:
+    from dadata import Dadata
+except ImportError:  # pragma: no cover - optional dependency for SDK mode
+    Dadata = None
 from config import DADATA_API_KEY, DADATA_FIND_URL
 from http_client import get_session
 from party_state import format_company_state
@@ -21,17 +27,40 @@ _PARTY_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=5000)
 _BRANCHES_CACHE = TTLCache(ttl_seconds=30 * 60, max_items=2000)
 _DADATA_SEM = asyncio.Semaphore(5)
 
-def _cache_key(query: str, branch_type: str | None = None) -> str:
-    return f"{query}:{branch_type or 'ALL'}"
+def _cache_key(
+    query: str,
+    branch_type: str | None = None,
+    kpp: str | None = None,
+    entity_type: str | None = None,
+    status: list[str] | None = None,
+) -> str:
+    status_key = ",".join(sorted(status or []))
+    return f"{query}:{branch_type or 'ALL'}:{kpp or ''}:{entity_type or ''}:{status_key}"
 
 
-async def fetch_companies(query: str, branch_type: str | None = None, count: int = 20) -> list[dict]:
+def _is_default_main_filter(
+    branch_type: str | None,
+    kpp: str | None,
+    entity_type: str | None,
+    status: list[str] | None,
+) -> bool:
+    return branch_type == "MAIN" and not any([kpp, entity_type, status])
+
+
+async def fetch_companies(
+    query: str,
+    branch_type: str | None = None,
+    count: int = 10,
+    kpp: str | None = None,
+    entity_type: str | None = None,
+    status: list[str] | None = None,
+) -> list[dict]:
     """Запрашивает список компаний/филиалов по ИНН/ОГРН через DaData API."""
     if not DADATA_API_KEY:
         logger.warning("Запрос к DaData пропущен: не задан DADATA_API_KEY|DADATA_TOKEN")
         return []
 
-    cache_key = _cache_key(query, branch_type)
+    cache_key = _cache_key(query, branch_type, kpp, entity_type, status)
 
     # Выбираем кэш в зависимости от типа запроса:
     # - для филиалов (BRANCH) — _BRANCHES_CACHE по cache_key
@@ -42,11 +71,16 @@ async def fetch_companies(query: str, branch_type: str | None = None, count: int
         if cached is not None:
             return cached
     elif branch_type == "MAIN":
-        cached = _PARTY_CACHE.get(query)
-        if cached is not None:
-            # fetch_company ожидает единичный элемент, но здесь возвращаем список
-            # если в кэше хранится одиночный элемент — приводим его к списку
-            return [cached] if cached is not None and not isinstance(cached, list) else (cached or [])
+        if _is_default_main_filter(branch_type, kpp, entity_type, status):
+            cached = _PARTY_CACHE.get(query)
+            if cached is not None:
+                # fetch_company ожидает единичный элемент, но здесь возвращаем список
+                # если в кэше хранится одиночный элемент — приводим его к списку
+                return [cached] if cached is not None and not isinstance(cached, list) else (cached or [])
+        else:
+            cached = _BRANCHES_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
     else:
         cached = _BRANCHES_CACHE.get(cache_key)
         if cached is not None:
@@ -57,14 +91,21 @@ async def fetch_companies(query: str, branch_type: str | None = None, count: int
         "Accept": "application/json",
         "Authorization": f"Token {DADATA_API_KEY}",
     }
-    payload: dict[str, str | int] = {"query": query, "count": max(1, min(count, 300))}
+    payload: dict[str, str | int | list[str]] = {"query": query, "count": max(1, min(count, 300))}
+    if kpp:
+        payload["kpp"] = kpp
     if branch_type:
         payload["branch_type"] = branch_type
+    if entity_type:
+        payload["type"] = entity_type
+    if status:
+        payload["status"] = status
 
     try:
         async with _DADATA_SEM:
             session = get_session()
-            async with session.post(DADATA_FIND_URL, json=payload, headers=headers) as resp:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            async with session.post(DADATA_FIND_URL, data=body, headers=headers) as resp:
                 if resp.status != 200:
                     body = await resp.text()
                     logger.error("DaData HTTP %s: %s", resp.status, body[:500])
@@ -80,31 +121,80 @@ async def fetch_companies(query: str, branch_type: str | None = None, count: int
     if branch_type == "BRANCH":
         _BRANCHES_CACHE.set(cache_key, suggestions)
     elif branch_type == "MAIN":
-        # Для MAIN сохраняем конкретно первый элемент в _PARTY_CACHE — совместимо с fetch_company
-        _PARTY_CACHE.set(query, suggestions[0] if suggestions else None)
+        if _is_default_main_filter(branch_type, kpp, entity_type, status):
+            # Для базового MAIN сохраняем конкретно первый элемент в _PARTY_CACHE — совместимо с fetch_company
+            _PARTY_CACHE.set(query, suggestions[0] if suggestions else None)
+        else:
+            _BRANCHES_CACHE.set(cache_key, suggestions)
     else:
         _BRANCHES_CACHE.set(cache_key, suggestions)
 
     return suggestions
 
 
-async def fetch_company(query: str) -> dict | None:
+def _fetch_company_with_sdk(query: str) -> dict | None:
+    """Синхронный запрос к DaData через официальный SDK dadata-py."""
+    if Dadata is None:
+        return None
+
+    dadata_client = None
+    try:
+        dadata_client = Dadata(DADATA_API_KEY)
+        result = dadata_client.find_by_id("party", query)
+    except Exception as exc:  # pragma: no cover - сетевой/SDK слой
+        logger.exception("Ошибка запроса к DaData SDK: %s", exc)
+        return None
+    finally:
+        if dadata_client is not None and hasattr(dadata_client, "close"):
+            dadata_client.close()
+
+    if isinstance(result, list) and result:
+        first = result[0]
+        return first if isinstance(first, dict) else None
+    return None
+
+
+async def fetch_company(
+    query: str,
+    *,
+    kpp: str | None = None,
+    branch_type: str | None = "MAIN",
+    entity_type: str | None = None,
+    status: list[str] | None = None,
+) -> dict | None:
     """Запрашивает одну компанию по ИНН/ОГРН через DaData API.
 
     По умолчанию запрашивает только головную организацию (branch_type=MAIN),
     чтобы пользователь сразу получал одну карточку.
     """
-    cached = _PARTY_CACHE.get(query)
-    if cached is not None:
-        return cached
+    can_use_default_cache = not any([kpp, entity_type, status]) and branch_type == "MAIN"
+    if can_use_default_cache:
+        cached = _PARTY_CACHE.get(query)
+        if cached is not None:
+            return cached
 
-    suggestions = await fetch_companies(query=query, branch_type="MAIN", count=1)
-    item = suggestions[0] if suggestions else None
-    _PARTY_CACHE.set(query, item)
+    # Предпочитаем официальный SDK dadata-py только для базового single-party запроса.
+    item = None
+    if can_use_default_cache:
+        item = await asyncio.to_thread(_fetch_company_with_sdk, query)
+
+    if item is None:
+        suggestions = await fetch_companies(
+            query=query,
+            branch_type=branch_type,
+            count=1,
+            kpp=kpp,
+            entity_type=entity_type,
+            status=status,
+        )
+        item = suggestions[0] if suggestions else None
+
+    if can_use_default_cache:
+        _PARTY_CACHE.set(query, item)
     return item
 
 
-async def fetch_branches(query: str, count: int = 20) -> list[dict]:
+async def fetch_branches(query: str, count: int = 10) -> list[dict]:
     """Возвращает филиалы организации по ИНН/ОГРН."""
     return await fetch_companies(query=query, branch_type="BRANCH", count=count)
 

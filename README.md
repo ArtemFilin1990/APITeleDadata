@@ -137,6 +137,23 @@ docker build -t inn-checker-bot .
 docker run -d --env-file .env --name inn-bot inn-checker-bot
 ```
 
+
+## Command Menu
+
+После запуска бот регистрирует команды меню Telegram для русской локали (`language_code="ru"`):
+
+- `/start` — Запуск
+- `/help` — Помощь/меню
+- `/find` — Найти компанию по ИНН (10/12 цифр)
+- Inline-кнопки выбора типа: «ИНН юр. лица», «ИНН физ. лица», «ИНН ИП»
+
+Проверка в клиенте Telegram:
+
+1. Откройте чат с ботом.
+2. Введите `/` в поле ввода.
+3. Убедитесь, что в списке автодополнения отображаются `/start`, `/help`, `/find` с указанными описаниями.
+4. Нажмите `/find` и проверьте, что бот показывает inline-кнопки «ИНН юр. лица», «ИНН физ. лица», «ИНН ИП».
+
 ## Использование
 
 1. Откройте бота в Telegram
@@ -177,11 +194,149 @@ docker run -d --env-file .env --name inn-bot inn-checker-bot
 | Компонент | Технология |
 |-----------|-----------|
 | Фреймворк бота | aiogram 3.x / pyTelegramBotAPI |
-| HTTP-клиент | aiohttp |
+| HTTP-клиент | aiohttp (fallback) |
+| DaData SDK | dadata-py (`find_by_id("party", inn)`) для single-поиска |
 | Справочник статусов | party-state.csv (hflabs/party-state) |
 | OpenAI SDK | openai (Responses API) |
 | FSM | aiogram FSM (MemoryStorage) |
 | Конфигурация | python-dotenv |
+
+
+### DaData findById/party: формат запроса
+
+Прямой HTTP-запрос отправляется с заголовками:
+
+- `Content-Type: application/json`
+- `Accept: application/json`
+- `Authorization: Token ${API_KEY}`
+
+Тело запроса отправляется как JSON в UTF-8. Поддерживаемые параметры:
+
+| Название | Тип | Обяз. | По умолч. | Описание |
+|---|---|---:|---|---|
+| `query` | `string` | ✓ | — | ИНН или ОГРН |
+| `count` | `number` |  | `10` | Количество результатов (максимум 300) |
+| `kpp` | `string` |  | — | КПП для поиска по филиалам |
+| `branch_type` | `string` |  | — | `MAIN` (головная организация) или `BRANCH` (филиал) |
+| `type` | `string` |  | — | `LEGAL` (юрлицо) или `INDIVIDUAL` (ИП) |
+| `status` | `array[string]` |  | — | Ограничение по статусу организации |
+
+
+#### Головные организации и филиалы
+
+Если у компании есть филиалы, метод может вернуть несколько объектов.
+
+- Чтобы получить только головную организацию, укажите `branch_type: "MAIN"`.
+- Чтобы искать конкретный филиал, укажите `kpp` вместе с `query`.
+
+Примеры:
+
+```json
+{
+  "query": "7707083893",
+  "branch_type": "MAIN"
+}
+```
+
+```json
+{
+  "query": "7707083893",
+  "kpp": "540602001"
+}
+```
+
+> Важно: для части компаний налоговая служба не передаёт КПП филиалов, поэтому такие филиалы найти по `kpp` невозможно.
+
+#### Юрлица и индивидуальные предприниматели
+
+Для фильтрации по типу организации используйте поле `type`:
+
+- `LEGAL` — только юрлица
+- `INDIVIDUAL` — только ИП
+
+Примеры:
+
+```json
+{
+  "query": "7707083893",
+  "type": "LEGAL"
+}
+```
+
+```json
+{
+  "query": "784806113663",
+  "type": "INDIVIDUAL"
+}
+```
+
+
+#### Что в ответе
+
+Метод `findById/party` возвращает объект `suggestions` (один или несколько элементов). Для каждого элемента:
+
+- `value` — наименование компании.
+- `unrestricted_value` — равно `value`.
+- `data.*` — реквизиты, статусы, адрес, руководители, финансы и другие атрибуты.
+
+Ниже — ключевые поля по тарифам (структура из документации DaData), которые важны для интеграции и уже частично используются ботом.
+
+##### Базовые поля (все тарифы)
+
+| Поле | Описание |
+|---|---|
+| `data.inn`, `data.kpp`, `data.kpp_largest`, `data.ogrn`, `data.ogrn_date` | Основные регистрационные реквизиты |
+| `data.hid` | Внутренний идентификатор DaData |
+| `data.type` | Тип: `LEGAL` (юрлицо) / `INDIVIDUAL` (ИП) |
+| `data.name.full_with_opf`, `data.name.short_with_opf`, `data.name.full`, `data.name.short` | Наименования (с/без ОПФ) |
+| `data.fio.*` | ФИО ИП |
+| `data.okato`, `data.oktmo`, `data.okpo`, `data.okogu`, `data.okfs`, `data.okved`, `data.okved_type` | Коды статистики |
+| `data.opf.code`, `data.opf.full`, `data.opf.short`, `data.opf.type` | Организационно-правовая форма |
+| `data.management.name`, `data.management.post`, `data.management.start_date` | Руководитель |
+| `data.branch_count`, `data.branch_type` | Количество филиалов и тип подразделения (`MAIN`/`BRANCH`) |
+| `data.address.value`, `data.address.unrestricted_value`, `data.address.data.source`, `data.address.data.qc` | Адрес и его качество |
+| `data.state.actuality_date`, `data.state.registration_date`, `data.state.liquidation_date`, `data.state.status`, `data.state.code` | Состояние организации |
+| `data.invalid` | Признак недостоверности сведений |
+
+##### Поля тарифов «Расширенный» и «Максимальный»
+
+| Поле | Описание |
+|---|---|
+| `data.employee_count` | Среднесписочная численность |
+| `data.finance.tax_system` | Налоговый режим (`AUSN`, `ESHN`, `SRP`, `USN`) |
+| `data.okveds[]` | Дополнительные ОКВЭД |
+| `data.authorities.fts_registration`, `data.authorities.fts_report`, `data.authorities.pf`, `data.authorities.sif` | Налоговая/ПФР/ФСС |
+| `data.citizenship.code.*`, `data.citizenship.name.*` | Гражданство ИП |
+
+##### Поля только тарифа «Максимальный»
+
+| Поле | Описание |
+|---|---|
+| `data.founders[]`, `data.founders[].share`, `data.founders[].invalidity` | Учредители, доли, недостоверность |
+| `data.managers[]`, `data.managers[].invalidity` | Руководители и недостоверность |
+| `data.predecessors[]`, `data.successors[]` | Правопредшественники/правопреемники |
+| `data.capital.type`, `data.capital.value` | Уставный капитал |
+| `data.finance.year`, `data.finance.income`, `data.finance.revenue`, `data.finance.expense`, `data.finance.debt`, `data.finance.penalty` | Финансовые показатели |
+| `data.documents.*` | Документы ФНС/ПФ/ФСС/МСП |
+| `data.licenses[]` | Лицензии |
+| `data.address.invalidity` | Недостоверность адреса |
+| `data.phones[]`, `data.emails[]` | Телефоны и email |
+
+##### Примечания по качеству данных
+
+- Доходы/расходы (`data.finance.*`) заполнены не для всех действующих компаний (по данным DaData — примерно у 60%).
+- Филиалы по `kpp` находятся не всегда: для части компаний ФНС не передает КПП филиалов.
+- Если недостоверен хотя бы один из блоков (учредители/руководители/адрес), DaData может вернуть `data.invalid = true`.
+
+##### Источники данных (по документации DaData)
+
+- ЕГРЮЛ/ЕГРИП ФНС.
+- Реестр филиалов иностранных юрлиц.
+- Реестр МСП.
+- Сведения о среднесписочной численности.
+- Сведения о специальных налоговых режимах.
+- Сведения о недоимках/задолженности и налоговых правонарушениях.
+- Бухгалтерская отчетность (форма ОКУД 0710002).
 
 ### Обработка ошибок
 

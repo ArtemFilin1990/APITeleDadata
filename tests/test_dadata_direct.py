@@ -31,9 +31,13 @@ class _FakeSession:
     def __init__(self, response=None):
         self._response = response
         self.calls = 0
+        self.last_args = None
+        self.last_kwargs = None
 
     def post(self, *args, **kwargs):
         self.calls += 1
+        self.last_args = args
+        self.last_kwargs = kwargs
         return self._response
 
 
@@ -86,13 +90,91 @@ class DadataDirectCachingTests(unittest.IsolatedAsyncioTestCase):
         payload = {"suggestions": [{"value": "first"}]}
         session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
 
-        with patch("dadata_direct.get_session", return_value=session):
+        with patch("dadata_direct._fetch_company_with_sdk", return_value=None), patch("dadata_direct.get_session", return_value=session):
             first = await dadata_direct.fetch_company("7707083893")
             second = await dadata_direct.fetch_company("7707083893")
 
         self.assertEqual(first, {"value": "first"})
         self.assertEqual(second, {"value": "first"})
         self.assertEqual(session.calls, 1)
+
+
+    async def test_fetch_company_uses_sdk_when_available(self):
+        dadata_direct._PARTY_CACHE._data.clear()
+
+        with patch("dadata_direct._fetch_company_with_sdk", return_value={"value": "sdk"}) as sdk_call, patch(
+            "dadata_direct.get_session"
+        ) as session_call:
+            result = await dadata_direct.fetch_company("7707083893")
+
+        self.assertEqual(result, {"value": "sdk"})
+        sdk_call.assert_called_once_with("7707083893")
+        session_call.assert_not_called()
+
+    async def test_fetch_company_falls_back_to_http_when_sdk_empty(self):
+        dadata_direct._PARTY_CACHE._data.clear()
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "http-fallback"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct._fetch_company_with_sdk", return_value=None), patch(
+            "dadata_direct.get_session", return_value=session
+        ):
+            result = await dadata_direct.fetch_company("7707083893")
+
+        self.assertEqual(result, {"value": "http-fallback"})
+        self.assertEqual(session.calls, 1)
+
+
+    async def test_fetch_companies_main_with_filters_ignores_party_cache(self):
+        dadata_direct._PARTY_CACHE._data.clear()
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        dadata_direct._PARTY_CACHE.set("7707083893", {"value": "cached-main"})
+
+        payload = {"suggestions": [{"value": "filtered-main"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies(
+                "7707083893",
+                branch_type="MAIN",
+                entity_type="LEGAL",
+                count=1,
+            )
+
+        self.assertEqual(result, [{"value": "filtered-main"}])
+        self.assertEqual(session.calls, 1)
+
+
+    async def test_fetch_companies_sends_utf8_json_headers_and_optional_params(self):
+        dadata_direct._PARTY_CACHE._data.clear()
+        dadata_direct._BRANCHES_CACHE._data.clear()
+        payload = {"suggestions": [{"value": "ok"}]}
+        session = _FakeSession(response=_FakeResponse(status=200, json_data=payload))
+
+        with patch("dadata_direct.get_session", return_value=session):
+            result = await dadata_direct.fetch_companies(
+                "7707083893-extra",
+                count=20,
+                kpp="770701001",
+                branch_type="MAIN",
+                entity_type="LEGAL",
+                status=["ACTIVE"],
+            )
+
+        self.assertEqual(result, [{"value": "ok"}])
+        self.assertEqual(session.last_kwargs["headers"]["Content-Type"], "application/json")
+        self.assertEqual(session.last_kwargs["headers"]["Accept"], "application/json")
+        self.assertIn("Token", session.last_kwargs["headers"]["Authorization"])
+
+        raw = session.last_kwargs["data"]
+        self.assertIsInstance(raw, bytes)
+        body = raw.decode("utf-8")
+        self.assertIn('"query": "7707083893-extra"', body)
+        self.assertIn('"kpp": "770701001"', body)
+        self.assertIn('"branch_type": "MAIN"', body)
+        self.assertIn('"type": "LEGAL"', body)
+        self.assertIn('"status": ["ACTIVE"]', body)
 
 
     async def test_fetch_companies_handles_non_200(self):
@@ -118,6 +200,30 @@ class DadataDirectCachingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first, [{"value": "branch"}])
         self.assertEqual(second, [{"value": "branch"}])
         self.assertEqual(session.calls, 1)
+
+
+class DadataDirectSdkTests(unittest.TestCase):
+    def test_fetch_company_with_sdk_closes_client(self):
+        class _FakeDadataClient:
+            def __init__(self, token):
+                self.token = token
+                self.closed = False
+
+            def find_by_id(self, kind, query):
+                self.last_kind = kind
+                self.last_query = query
+                return [{"value": "sdk-result"}]
+
+            def close(self):
+                self.closed = True
+
+        fake_client = _FakeDadataClient("token")
+
+        with patch("dadata_direct.Dadata", return_value=fake_client):
+            result = dadata_direct._fetch_company_with_sdk("7707083893")
+
+        self.assertEqual(result, {"value": "sdk-result"})
+        self.assertTrue(fake_client.closed)
 
 
 if __name__ == "__main__":

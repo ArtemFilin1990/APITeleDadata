@@ -4,3 +4,4 @@ python-dotenv>=1.0
 openai>=1.30
 pyTelegramBotAPI>=4.21
 pytest>=9.0
+dadata>=21.10.1

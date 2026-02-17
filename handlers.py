@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -17,6 +17,9 @@ from keyboards import (
     BTN_START,
     CB_ACT_CRM,
     CB_ACT_EXPORT,
+    CB_ACT_FIND_FL,
+    CB_ACT_FIND_IP,
+    CB_ACT_FIND_UL,
     CB_ACT_MENU,
     CB_ACT_NEW_INN,
     CB_NAV_BACK,
@@ -35,6 +38,7 @@ from keyboards import (
     CB_PAGE_SUCCESSOR,
     CB_PAGE_TAXES,
     inline_actions_kb,
+    inline_find_type_kb,
     reply_main_menu_kb,
 )
 from validators import parse_inns, validate_company_id
@@ -46,8 +50,20 @@ START_TEXT = "Привет 😊\nВведите ИНН/ОГРН — соберу
 HELLO_TEXT = "Я на месте 🙂\nНажмите «🔎 Проверить ИНН» или просто отправьте ИНН/ОГРН."
 RESTART_TEXT = "Начинаем заново.\nВведите ИНН/ОГРН — только цифры."
 ASK_INN_TEXT = "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517"
+FIND_TYPE_PROMPT = "Выберите тип идентификатора:"
+ENTITY_TYPE_LEGAL = "LEGAL"
+ENTITY_TYPE_INDIVIDUAL = "INDIVIDUAL"
 ERR_DIGITS_TEXT = "Упс 🙂 Нужны только цифры без пробелов. Попробуйте ещё раз."
 ERR_LEN_TEXT = "ИНН/ОГРН должен быть 10/12/13/15 цифр. Пример: 3525405517"
+
+
+def _search_filters_from_choice(choice: str | None) -> dict[str, str]:
+    """Возвращает фильтры DaData для выбранного типа идентификатора."""
+    if choice == CB_ACT_FIND_UL:
+        return {"branch_type": "MAIN", "entity_type": ENTITY_TYPE_LEGAL}
+    if choice in {CB_ACT_FIND_FL, CB_ACT_FIND_IP}:
+        return {"branch_type": "MAIN", "entity_type": ENTITY_TYPE_INDIVIDUAL}
+    return {"branch_type": "MAIN"}
 
 
 class CheckINN(StatesGroup):
@@ -389,7 +405,40 @@ async def _go_input_inn(message: Message, state: FSMContext) -> None:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+    await state.update_data(find_choice=None)
     await message.answer(START_TEXT, reply_markup=reply_main_menu_kb())
+    await message.answer(FIND_TYPE_PROMPT, reply_markup=inline_find_type_kb())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.answer(
+        "Команды:\n"
+        "/start — запуск\n"
+        "/help — помощь/меню\n"
+        "/find — начать поиск по ИНН/ОГРН",
+        reply_markup=reply_main_menu_kb(),
+    )
+
+
+@router.message(Command("find"))
+async def cmd_find(message: Message, state: FSMContext):
+    await state.set_state(CheckINN.waiting_inn)
+    await state.update_data(find_choice=None)
+    await message.answer(FIND_TYPE_PROMPT, reply_markup=inline_find_type_kb())
+
+
+@router.callback_query(F.data.in_({CB_ACT_FIND_UL, CB_ACT_FIND_FL, CB_ACT_FIND_IP}))
+async def on_find_type_selected(callback: CallbackQuery, state: FSMContext):
+    hints = {
+        CB_ACT_FIND_UL: "Выбран ИНН юр. лица. Введите 10 цифр.",
+        CB_ACT_FIND_FL: "Выбран ИНН физ. лица. Введите 12 цифр.",
+        CB_ACT_FIND_IP: "Выбран ИНН ИП. Введите 12 цифр.",
+    }
+    await state.set_state(CheckINN.waiting_inn)
+    await state.update_data(find_choice=callback.data)
+    await callback.message.answer(hints[callback.data], reply_markup=reply_main_menu_kb())
+    await callback.answer()
 
 
 @router.message(F.text == BTN_HELLO)
@@ -400,11 +449,13 @@ async def cmd_hello(message: Message):
 @router.message(F.text == BTN_START)
 async def cmd_restart(message: Message, state: FSMContext):
     await state.clear()
+    await state.update_data(find_choice=None)
     await message.answer(RESTART_TEXT, reply_markup=reply_main_menu_kb())
 
 
 @router.message(F.text == BTN_CHECK_INN)
 async def cmd_check_inn(message: Message, state: FSMContext):
+    await state.update_data(find_choice=None)
     await _go_input_inn(message, state)
 
 
@@ -433,10 +484,13 @@ async def handle_inn(message: Message, state: FSMContext):
 
     wait_msg = await message.answer("Ищу данные…", reply_markup=reply_main_menu_kb())
 
+    state_data = await state.get_data()
+    filters = _search_filters_from_choice(state_data.get("find_choice"))
+
     found_companies: list[tuple[str, dict]] = []
     not_found = 0
     for value in valid_values:
-        company = await fetch_company(value)
+        company = await fetch_company(value, **filters)
         if company is None:
             not_found += 1
             continue

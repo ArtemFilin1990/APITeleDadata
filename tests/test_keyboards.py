@@ -3,6 +3,9 @@ import unittest
 from keyboards import (
     CB_ACT_CRM,
     CB_ACT_EXPORT,
+    CB_ACT_FIND_FL,
+    CB_ACT_FIND_IP,
+    CB_ACT_FIND_UL,
     CB_NAV_BACK,
     CB_NAV_HOME,
     CB_PAGE_DETAILS,
@@ -10,6 +13,7 @@ from keyboards import (
     BTN_HELLO,
     BTN_START,
     inline_actions_kb,
+    inline_find_type_kb,
     reply_main_menu_kb,
 )
 
@@ -40,6 +44,18 @@ class InlineKeyboardTests(unittest.TestCase):
         self.assertEqual(last_row[0].callback_data, CB_NAV_BACK)
         self.assertEqual(last_row[1].text, "домой")
         self.assertEqual(last_row[1].callback_data, CB_NAV_HOME)
+
+
+class InlineFindTypeKeyboardTests(unittest.TestCase):
+    def test_contains_ul_fl_ip_buttons(self):
+        kb = inline_find_type_kb()
+        row = kb.inline_keyboard[0]
+        self.assertEqual(row[0].text, "ИНН юр. лица")
+        self.assertEqual(row[0].callback_data, CB_ACT_FIND_UL)
+        self.assertEqual(row[1].text, "ИНН физ. лица")
+        self.assertEqual(row[1].callback_data, CB_ACT_FIND_FL)
+        self.assertEqual(row[2].text, "ИНН ИП")
+        self.assertEqual(row[2].callback_data, CB_ACT_FIND_IP)
 
 
 if __name__ == "__main__":

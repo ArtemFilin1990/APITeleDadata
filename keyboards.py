@@ -36,6 +36,9 @@ CB_ACT_NEW_INN = "act:new_inn"
 CB_ACT_MENU = "act:menu"
 CB_ACT_EXPORT = "act:export"
 CB_ACT_CRM = "act:crm"
+CB_ACT_FIND_UL = "act:find:ul"
+CB_ACT_FIND_FL = "act:find:fl"
+CB_ACT_FIND_IP = "act:find:ip"
 CB_PAGE_DETAILS = "page:details"
 
 
@@ -50,6 +53,20 @@ def reply_main_menu_kb() -> ReplyKeyboardMarkup:
         is_persistent=True,
     )
 
+
+
+
+def inline_find_type_kb() -> InlineKeyboardMarkup:
+    """Inline-кнопки выбора типа поиска по идентификатору."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="ИНН юр. лица", callback_data=CB_ACT_FIND_UL),
+                InlineKeyboardButton(text="ИНН физ. лица", callback_data=CB_ACT_FIND_FL),
+                InlineKeyboardButton(text="ИНН ИП", callback_data=CB_ACT_FIND_IP),
+            ]
+        ]
+    )
 
 def inline_actions_kb() -> InlineKeyboardMarkup:
     """Фиксированное inline-меню под карточкой и дочерними экранами."""
