@@ -18,9 +18,9 @@ from handlers import (
 
 
 class HandlerSummaryTests(unittest.TestCase):
-    def test_start_text_mentions_fast_and_legal_data(self):
-        self.assertIn("Бесплатный быстрый сервис проверки контрагентов", START_TEXT)
-        self.assertIn("Только легальные данные", START_TEXT)
+    def test_start_text_mentions_spy_greeting_and_whisper(self):
+        self.assertIn("Агент на связи", START_TEXT)
+        self.assertIn("Шёпотом: введи ИНН/ОГРН", START_TEXT)
 
     def test_build_result_totals_with_mixed_invalid_values(self):
         text = _build_result_totals(found=1, not_found=0, invalid=["12AB", "123"])
