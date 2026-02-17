@@ -13,8 +13,6 @@ from aiogram.types import CallbackQuery, Message
 from dadata_direct import fetch_company
 from keyboards import (
     BTN_CHECK_INN,
-    BTN_HELLO,
-    BTN_START,
     CB_ACT_CRM,
     CB_ACT_EXPORT,
     CB_ACT_MENU,
@@ -43,15 +41,50 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 START_TEXT = "Привет 😊\nВведите ИНН/ОГРН — соберу карточку и риски."
-HELLO_TEXT = "Я на месте 🙂\nНажмите «🔎 Проверить ИНН» или просто отправьте ИНН/ОГРН."
-RESTART_TEXT = "Начинаем заново.\nВведите ИНН/ОГРН — только цифры."
 ASK_INN_TEXT = "Введите ИНН/ОГРН: 10/12 (ИНН) или 13/15 (ОГРН) цифр.\nПример: 3525405517"
 ERR_DIGITS_TEXT = "Упс 🙂 Нужны только цифры без пробелов. Попробуйте ещё раз."
 ERR_LEN_TEXT = "ИНН/ОГРН должен быть 10/12/13/15 цифр. Пример: 3525405517"
+TELEGRAM_TEXT_LIMIT = 4096
 
 
 class CheckINN(StatesGroup):
     waiting_inn = State()
+
+
+def _split_for_telegram(text: str, chunk_size: int = TELEGRAM_TEXT_LIMIT) -> list[str]:
+    """Разбивает длинный текст на безопасные для Telegram части."""
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > chunk_size:
+        split_at = remaining.rfind("\n", 0, chunk_size + 1)
+        if split_at <= 0:
+            split_at = chunk_size
+        chunk = remaining[:split_at].rstrip()
+        if not chunk:
+            chunk = remaining[:chunk_size]
+            split_at = chunk_size
+        chunks.append(chunk)
+        remaining = remaining[split_at:].lstrip("\n")
+
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+async def _send_text_chunks(message: Message, text: str, *, reply_markup=None) -> None:
+    parts = _split_for_telegram(text)
+    for index, part in enumerate(parts):
+        await message.answer(part, reply_markup=reply_markup if index == 0 else None)
+
+
+async def _edit_text_chunks(message: Message, text: str, *, reply_markup=None) -> None:
+    parts = _split_for_telegram(text)
+    await message.edit_text(parts[0], reply_markup=reply_markup)
+    for part in parts[1:]:
+        await message.answer(part)
 
 
 def _build_result_totals(found: int, not_found: int, invalid: list[str]) -> str:
@@ -392,17 +425,6 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(START_TEXT, reply_markup=reply_main_menu_kb())
 
 
-@router.message(F.text == BTN_HELLO)
-async def cmd_hello(message: Message):
-    await message.answer(HELLO_TEXT, reply_markup=reply_main_menu_kb())
-
-
-@router.message(F.text == BTN_START)
-async def cmd_restart(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(RESTART_TEXT, reply_markup=reply_main_menu_kb())
-
-
 @router.message(F.text == BTN_CHECK_INN)
 async def cmd_check_inn(message: Message, state: FSMContext):
     await _go_input_inn(message, state)
@@ -413,7 +435,7 @@ async def cmd_check_inn(message: Message, state: FSMContext):
 async def handle_inn(message: Message, state: FSMContext):
     text = (message.text or "").strip()
 
-    if text in {BTN_START, BTN_HELLO, BTN_CHECK_INN}:
+    if text == BTN_CHECK_INN:
         return
 
     values = parse_inns(text)
@@ -444,7 +466,8 @@ async def handle_inn(message: Message, state: FSMContext):
 
     if not found_companies:
         summary = _build_result_totals(found=0, not_found=not_found, invalid=invalid_values)
-        await wait_msg.edit_text(
+        await _edit_text_chunks(
+            wait_msg,
             "По указанным ИНН/ОГРН данные не найдены.\n" + summary,
             reply_markup=inline_actions_kb(),
         )
@@ -460,7 +483,11 @@ async def handle_inn(message: Message, state: FSMContext):
         history=[],
     )
 
-    await wait_msg.edit_text(f"{_build_main_card(first_company)}\n\n{summary}", reply_markup=inline_actions_kb())
+    await _edit_text_chunks(
+        wait_msg,
+        f"{_build_main_card(first_company)}\n\n{summary}",
+        reply_markup=inline_actions_kb(),
+    )
 
 
 @router.callback_query(F.data == CB_NAV_HOME)
@@ -472,7 +499,7 @@ async def on_home(callback: CallbackQuery, state: FSMContext):
         return
 
     await state.update_data(current_page="page:card")
-    await callback.message.edit_text(_build_main_card(company), reply_markup=inline_actions_kb())
+    await _edit_text_chunks(callback.message, _build_main_card(company), reply_markup=inline_actions_kb())
     await callback.answer()
 
 
@@ -488,10 +515,10 @@ async def on_back(callback: CallbackQuery, state: FSMContext):
     if history:
         target_page = history.pop()
         await state.update_data(history=history, current_page=target_page)
-        await callback.message.edit_text(_format_page(company, target_page), reply_markup=inline_actions_kb())
+        await _edit_text_chunks(callback.message, _format_page(company, target_page), reply_markup=inline_actions_kb())
     else:
         await state.update_data(current_page="page:card")
-        await callback.message.edit_text(_build_main_card(company), reply_markup=inline_actions_kb())
+        await _edit_text_chunks(callback.message, _build_main_card(company), reply_markup=inline_actions_kb())
 
     await callback.answer()
 
@@ -518,7 +545,7 @@ async def on_export(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Сначала введите ИНН", show_alert=True)
         return
 
-    await callback.message.answer(_build_export_text(company), reply_markup=inline_actions_kb())
+    await _send_text_chunks(callback.message, _build_export_text(company), reply_markup=inline_actions_kb())
     await callback.answer("Экспорт подготовлен")
 
 
@@ -530,7 +557,7 @@ async def on_crm(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Сначала введите ИНН", show_alert=True)
         return
 
-    await callback.message.answer(_build_crm_text(company), reply_markup=inline_actions_kb())
+    await _send_text_chunks(callback.message, _build_crm_text(company), reply_markup=inline_actions_kb())
     await callback.answer("Блок для CRM готов")
 
 
@@ -566,5 +593,5 @@ async def on_page(callback: CallbackQuery, state: FSMContext):
     history.append(current_page)
     await state.update_data(history=history, current_page=page)
 
-    await callback.message.edit_text(_format_page(company, page), reply_markup=inline_actions_kb())
+    await _edit_text_chunks(callback.message, _format_page(company, page), reply_markup=inline_actions_kb())
     await callback.answer()
