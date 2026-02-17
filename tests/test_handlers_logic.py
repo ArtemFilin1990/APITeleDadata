@@ -4,7 +4,15 @@ import unittest
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-token")
 os.environ.setdefault("DADATA_API_KEY", "test-dadata-api-key")
 
-from handlers import START_TEXT, _build_result_totals, _split_for_telegram
+from handlers import HELP_TEXT, START_TEXT, _build_details_card, _build_result_totals, _format_page, _money, _split_for_telegram
+from keyboards import (
+    CB_PAGE_DOCUMENTS,
+    CB_PAGE_FOUNDERS,
+    CB_PAGE_MANAGEMENT,
+    CB_PAGE_RELATIONS,
+    CB_PAGE_SCORING,
+    CB_PAGE_TAXES,
+)
 
 
 class HandlerSummaryTests(unittest.TestCase):
@@ -18,6 +26,11 @@ class HandlerSummaryTests(unittest.TestCase):
         self.assertIn("не только цифры: 12AB", text)
         self.assertIn("неверная длина: 123", text)
 
+    def test_help_text_mentions_supported_commands(self):
+        self.assertIn("/start", HELP_TEXT)
+        self.assertIn("/help", HELP_TEXT)
+        self.assertIn("/find", HELP_TEXT)
+
 
 class TelegramSplitTests(unittest.TestCase):
     def test_split_for_telegram_respects_limit(self):
@@ -25,6 +38,83 @@ class TelegramSplitTests(unittest.TestCase):
         chunks = _split_for_telegram(text, chunk_size=50)
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(chunk) <= 50 for chunk in chunks))
+
+
+class PremiumPagesTests(unittest.TestCase):
+    def setUp(self):
+        self.company = {
+            "data": {
+                "founders": [
+                    {"name": "Иванов И.И.", "share": {"value": 5000}},
+                ],
+                "management": {"name": "Петров П.П.", "post": "Генеральный директор", "start_date": 1672531200000},
+                "managers": [{"name": "Сидоров С.С.", "post": "Директор"}],
+                "authorities": {"fts_registration": {"name": "ИФНС №1", "date": 1672531200000}},
+                "tax_system": {"name": "УСН"},
+                "fns_debt": {"debt": 1200},
+                "licenses": [{"series": "77", "number": "123456", "issue_date": 1672531200000}],
+                "documents": [{"type": "Устав", "number": "1", "issue_date": 1672531200000}],
+            }
+        }
+
+    def test_founders_page_renders_data(self):
+        text = _format_page(self.company, CB_PAGE_FOUNDERS)
+        self.assertIn("Учредители", text)
+        self.assertIn("Иванов И.И.", text)
+
+    def test_management_page_renders_current_and_history(self):
+        text = _format_page(self.company, CB_PAGE_MANAGEMENT)
+        self.assertIn("Текущий руководитель", text)
+        self.assertIn("История руководителей", text)
+
+    def test_taxes_page_renders_tax_fields(self):
+        text = _format_page(self.company, CB_PAGE_TAXES)
+        self.assertIn("Налоговый орган", text)
+        self.assertIn("УСН", text)
+
+    def test_documents_page_renders_licenses_and_documents(self):
+        text = _format_page(self.company, CB_PAGE_DOCUMENTS)
+        self.assertIn("Лицензии", text)
+        self.assertIn("Документы", text)
+
+    def test_relations_page_renders_physical_links(self):
+        self.company["data"]["founders"].append({"name": "Иванов И.И.", "type": "INDIVIDUAL", "inn": "500100732259"})
+        self.company["data"]["founders"].append({"name": "ООО Ромашка", "type": "LEGAL", "inn": "7700000000"})
+        self.company["data"]["managers"].append({"name": "Иванова И.И.", "type": "INDIVIDUAL", "post": "Управляющий"})
+        text = _format_page(self.company, CB_PAGE_RELATIONS)
+        self.assertIn("Связи с физлицами", text)
+        self.assertIn("Учредитель: Иванов И.И.", text)
+        self.assertIn("Руководитель: Иванова И.И.", text)
+        self.assertNotIn("ООО Ромашка", text)
+
+    def test_scoring_page_renders_score_and_level(self):
+        text = _format_page(self.company, CB_PAGE_SCORING)
+        self.assertIn("Внутренний скоринг", text)
+        self.assertIn("Балл:", text)
+        self.assertIn("Уровень:", text)
+
+    def test_money_handles_numeric_string(self):
+        self.assertEqual(_money("1200"), "1 200 ₽")
+
+    def test_details_card_handles_non_list_premium_fields(self):
+        company = {
+            "value": 'ООО "Тест"',
+            "data": {
+                "name": {"short_with_opf": 'ООО "Тест"', "full_with_opf": 'Общество с ограниченной ответственностью "Тест"'},
+                "inn": "7707083893",
+                "kpp": "770701001",
+                "ogrn": "1027700132195",
+                "state": {"status": "ACTIVE"},
+                "founders": {"unexpected": "dict"},
+                "managers": {"unexpected": "dict"},
+                "licenses": {"unexpected": "dict"},
+                "documents": {"unexpected": "dict"},
+            },
+        }
+        text = _build_details_card(company)
+        self.assertIn("Учредителей в карточке: 0", text)
+        self.assertIn("Руководителей в истории: 0", text)
+        self.assertIn("Лицензии/документы: 0/0", text)
 
 
 if __name__ == "__main__":
