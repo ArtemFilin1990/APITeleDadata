@@ -249,6 +249,15 @@ def _build_details_card(company: dict) -> str:
             f"Тел.: {_v(phones_line)}",
             f"Email: {_v(emails_line)}",
             f"Сайт: {_v(site_line)}",
+            "🧩 Доп. поля (тариф Макс.)",
+            f"Учредители: {_v(len(d.get('founders') or []))}",
+            f"Руководители: {_v(len(d.get('managers') or []))}",
+            f"Правопредшественники: {_v(len(d.get('predecessors') or []))}",
+            f"Правопреемники: {_v(len(d.get('successors') or []))}",
+            f"Лицензии: {_v(len(d.get('licenses') or []))}",
+            f"Документы: {_v(len(d.get('documents') or []))}",
+            f"Филиалы: {_v(d.get('branch_count'))}",
+            f"Тип филиала: {_v(d.get('branch_type'))}",
         ]
     )
 
@@ -300,6 +309,38 @@ def _full_contacts(company: dict) -> str:
     lines.append("Email: " + (", ".join(emails) if emails else "—"))
     lines.append("Сайт: " + (", ".join(websites) if websites else "—"))
     return "\n".join(lines)
+
+
+def _format_people(items: list[dict], *, fallback: str = "данные не предоставлены") -> str:
+    rows: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = _v(item.get("name") or item.get("value"))
+        post = _v(item.get("post"), default="")
+        share = item.get("share") if isinstance(item.get("share"), dict) else {}
+        share_value = _v(share.get("value"), default="")
+        line = f"- {name}"
+        if post and post != "—":
+            line += f" ({post})"
+        if share_value and share_value != "—":
+            line += f" • доля {share_value}"
+        rows.append(line)
+    return "\n".join(rows) if rows else fallback
+
+
+def _format_named_events(items: list[dict], *, fallback: str = "данные не предоставлены") -> str:
+    rows: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = _v(item.get("name") or item.get("value"))
+        date = _date_from_ms(item.get("date"))
+        if date != "—":
+            rows.append(f"- {name} ({date})")
+        else:
+            rows.append(f"- {name}")
+    return "\n".join(rows) if rows else fallback
 
 
 def _format_page(company: dict, page: str) -> str:
@@ -386,24 +427,48 @@ def _format_page(company: dict, page: str) -> str:
         ])
 
     if page == CB_PAGE_FOUNDERS:
+        founders = d.get("founders") if isinstance(d.get("founders"), list) else []
+        managers = d.get("managers") if isinstance(d.get("managers"), list) else []
+        predecessors = d.get("predecessors") if isinstance(d.get("predecessors"), list) else []
+        successors = d.get("successors") if isinstance(d.get("successors"), list) else []
         return "\n".join([
-            "👥 Учредители",
-            "данные не предоставлены",
+            "👥 Учредители и руководство",
+            f"Учредители ({len(founders)}):",
+            _format_people(founders),
+            "",
+            f"Руководители ({len(managers)}):",
+            _format_people(managers),
+            "",
+            f"Правопредшественники ({len(predecessors)}):",
+            _format_named_events(predecessors),
+            "",
+            f"Правопреемники ({len(successors)}):",
+            _format_named_events(successors),
         ])
 
     if page == CB_PAGE_TAXES:
+        tax_system = d.get("tax_system") if isinstance(d.get("tax_system"), dict) else {}
+        taxation = d.get("taxation") if isinstance(d.get("taxation"), dict) else {}
+        branch_count = d.get("branch_count") if isinstance(d.get("branch_count"), int) else None
         return "\n".join([
-            "🧾 Налоги",
-            "данные не предоставлены",
+            "🧾 Налоги и учёт",
+            f"Система налогообложения: {_v(tax_system.get('name') or taxation.get('name'))}",
+            f"Код системы: {_v(tax_system.get('code') or taxation.get('code'))}",
+            f"Дата применения: {_date_from_ms(tax_system.get('date') or taxation.get('date'))}",
+            f"Количество филиалов: {_v(branch_count)}",
         ])
 
     if page == CB_PAGE_SUCCESSOR:
-        succ = d.get("successors") or []
-        if succ and isinstance(succ[0], dict):
-            succ_text = "\n".join(f"- {_v(item.get('value'))}" for item in succ if isinstance(item, dict))
-        else:
-            succ_text = "данные не предоставлены"
-        return "\n".join(["✅️Правопреемник", succ_text])
+        successors = d.get("successors") if isinstance(d.get("successors"), list) else []
+        predecessors = d.get("predecessors") if isinstance(d.get("predecessors"), list) else []
+        return "\n".join([
+            "🔁 Правопреемство",
+            f"Правопреемники ({len(successors)}):",
+            _format_named_events(successors),
+            "",
+            f"Правопредшественники ({len(predecessors)}):",
+            _format_named_events(predecessors),
+        ])
 
     if page == CB_PAGE_CONTACTS:
         return _full_contacts(company)

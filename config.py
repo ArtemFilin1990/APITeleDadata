@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import sys
 
 from dotenv import load_dotenv
@@ -17,6 +18,15 @@ DADATA_API_KEY: str = os.getenv("DADATA_API_KEY") or os.getenv("DADATA_TOKEN", "
 DADATA_SECRET_KEY: str = os.getenv("DADATA_SECRET_KEY") or os.getenv("DADATA_SECRET", "")
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
+
+def validate_telegram_bot_token(token: str) -> bool:
+    """Проверяет формат Telegram Bot Token без логирования его значения."""
+    if not token:
+        return False
+    if token.startswith("test-"):
+        return True
+    return bool(re.fullmatch(r"\d{7,}:[A-Za-z0-9_-]{20,}", token))
+
 # Режим работы (на текущем этапе используется polling в bot.py).
 MODE: str = os.getenv("MODE", "polling").lower()
 WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
@@ -30,6 +40,13 @@ _required = {
 _missing = [k for k, v in _required.items() if not v]
 if _missing:
     logging.error("Не заданы переменные окружения: %s", ", ".join(_missing))
+    sys.exit(1)
+
+if not validate_telegram_bot_token(TELEGRAM_BOT_TOKEN):
+    logging.error(
+        "Некорректный формат TELEGRAM_BOT_TOKEN|BOT_TOKEN. "
+        "Сгенерируйте новый токен через @BotFather и обновите переменную окружения."
+    )
     sys.exit(1)
 
 if not DADATA_API_KEY:
